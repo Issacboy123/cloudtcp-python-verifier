@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloudtcp.io/schemas/tcp-intermediate-format/v1.0.0/schema.json",
+  "title": "Cloud TCP Intermediate Format",
+  "description": "Intermediate representation feeding Cloud TCP's AI traffic prediction engine. Carries static plan geometry, live sensor observations, and model-generated predictions in one document.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["format_version", "site", "typical_application", "zones", "elements"],
+  "additionalProperties": false,
+
+  "$defs": {
+
+    "station_offset": {
+      "type": "object",
+      "required": ["station", "offset", "side"],
+      "additionalProperties": false,
+      "properties": {
+        "station": { "type": "number", "description": "Distance from reference point along centerline (ft or m, matching site.units)." },
+        "offset":  { "type": "number", "description": "Perpendicular distance from centerline. Magnitude only; direction from 'side'." },
+        "side":    { "type": "string", "enum": ["left", "right", "center"], "description": "Side of centerline when facing increasing station." }
+      }
+    },
+
+    "source_ref": {
+      "type": "object",
+      "description": "CAD/GIS traceability.",
+      "additionalProperties": false,
+      "properties": {
+        "layer":  { "type": "string" },
+        "entity": { "type": "string" },
+        "handle": { "type": "string" },
+        "block":  { "type": "string" }
+      }
+    },
+
+    "zone_prediction": {
+      "type": "object",
+      "description": "AI model output for one zone at the prediction timestamp.",
+      "additionalProperties": false,
+      "properties": {
+        "zone_id":            { "type": "string" },
+        "queue_length_ft":    { "type": "number", "description": "Predicted back-of-queue length." },
+        "delay_sec":          { "type": "number", "description": "Predicted average vehicle delay through this zone." },
+        "throughput_vph":     { "type": "number", "description": "Predicted vehicles per hour." },
+        "congestion_index":   { "type": "number", "minimum": 0, "maximum": 1, "description": "0 = free flow, 1 = full stop." },
+        "confidence":         { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+
+  },
+
+  "properties": {
+
+    "format_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+
+    "site": {
+      "type": "object",
+      "required": ["name", "coordinate_system", "units", "road_name", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "name":                 { "type": "string" },
+        "project_number":       { "type": "string" },
+        "source_file":          { "type": "string" },
+        "source_format":        { "type": "string", "enum": ["DXF", "SHP", "GeoJSON", "KMZ", "Other"] },
+        "coordinate_system":    { "type": "string" },
+        "units":                { "type": "string", "enum": ["feet", "meters"] },
+        "road_name":            { "type": "string" },
+        "highway_number":       { "type": "string" },
+        "location_description": { "type": "string" },
+        "city":                 { "type": "string" },
+        "county":               { "type": "string" },
+        "state":                { "type": "string" },
+        "created_date":         { "type": "string", "format": "date" }
+      }
+    },
+
+    "typical_application": {
+      "type": "object",
+      "required": ["type", "direction", "posted_speed_mph", "lanes_total"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["lane_closure","shoulder_closure","road_closure","intersection_closure","multi_lane_closure","median_crossover","ramp_closure","other"]
+        },
+        "direction":           { "type": "string", "enum": ["NB","SB","EB","WB","BOTH"] },
+        "posted_speed_mph":    { "type": "number", "minimum": 0 },
+        "work_zone_speed_mph": { "type": "number", "minimum": 0 },
+        "lanes_total":         { "type": "integer", "minimum": 1 },
+        "lanes_closed":        { "type": "integer", "minimum": 0 },
+        "description":         { "type": "string" }
+      }
+    },
+
+    "temporal_context": {
+      "type": "object",
+      "description": "Conditions at snapshot time. Used as AI model features.",
+      "additionalProperties": false,
+      "properties": {
+        "timestamp":          { "type": "string", "format": "date-time", "description": "ISO 8601 UTC snapshot time." },
+        "day_of_week":        { "type": "string", "enum": ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] },
+        "time_of_day_bin":    { "type": "string", "enum": ["overnight","am_peak","midday","pm_peak","evening"], "description": "Coarse time bin for model feature." },
+        "weather":            { "type": "string", "enum": ["clear","cloudy","light_rain","heavy_rain","fog","snow","ice"] },
+        "visibility_mi":      { "type": "number" },
+        "nearby_event":       { "type": "boolean", "description": "True if a major event (game, concert) is within 5 mi." },
+        "nearby_event_note":  { "type": "string" },
+        "school_in_session":  { "type": "boolean" }
+      }
+    },
+
+    "observations": {
+      "type": "array",
+      "description": "Point sensor or manual count readings at the snapshot time. AI input features.",
+      "items": {
+        "type": "object",
+        "required": ["obs_id", "source", "station"],
+        "additionalProperties": false,
+        "properties": {
+          "obs_id":          { "type": "string" },
+          "source":          { "type": "string", "enum": ["loop_detector","radar","bluetooth","manual_count","connected_vehicle","camera_cv"], "description": "Data source type." },
+          "station":         { "type": "number", "description": "Station along centerline where reading was taken." },
+          "zone_id":         { "type": "string" },
+          "speed_mph":       { "type": "number" },
+          "volume_vph":      { "type": "number", "description": "Vehicles per hour at this point." },
+          "occupancy_pct":   { "type": "number", "minimum": 0, "maximum": 100, "description": "% time detector is occupied (loop/radar)." },
+          "headway_sec":     { "type": "number", "description": "Average time gap between vehicles." },
+          "queue_length_ft": { "type": "number", "description": "Observed back-of-queue from this station." },
+          "note":            { "type": "string" }
+        }
+      }
+    },
+
+    "zones": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["zone_id", "type", "start_station", "end_station"],
+        "additionalProperties": false,
+        "properties": {
+          "zone_id":       { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["advance_warning","transition","upstream_buffer","work","downstream_buffer","termination"]
+          },
+          "start_station": { "type": "number" },
+          "end_station":   { "type": "number" },
+          "description":   { "type": "string" }
+        }
+      }
+    },
+
+    "elements": {
+      "type": "array",
+      "description": "All TCP devices. Typed via 'type' discriminator.",
+      "items": {
+        "oneOf": [
+          {
+            "title": "Sign",
+            "type": "object",
+            "required": ["element_id", "type", "mutcd_code", "position"],
+            "additionalProperties": false,
+            "properties": {
+              "element_id":     { "type": "string" },
+              "type":           { "type": "string", "const": "sign" },
+              "mutcd_code":     { "type": "string" },
+              "legend":         { "type": "string" },
+              "size_inches":    { "type": "string" },
+              "face_direction": { "type": "string", "enum": ["NB","SB","EB","WB"] },
+              "zone_id":        { "type": "string" },
+              "position":       { "$ref": "#/$defs/station_offset" },
+              "source":         { "$ref": "#/$defs/source_ref" }
+            }
+          },
+          {
+            "title": "Taper",
+            "type": "object",
+            "required": ["element_id", "type", "taper_type", "start_station", "end_station", "start_offset", "end_offset"],
+            "additionalProperties": false,
+            "properties": {
+              "element_id":    { "type": "string" },
+              "type":          { "type": "string", "const": "taper" },
+              "taper_type":    { "type": "string", "enum": ["merge","shift","shoulder","downstream"] },
+              "start_station": { "type": "number" },
+              "end_station":   { "type": "number" },
+              "start_offset":  { "type": "number" },
+              "end_offset":    { "type": "number" },
+              "lane_width_ft": { "type": "number" },
+              "side":          { "type": "string", "enum": ["left","right"] },
+              "zone_id":       { "type": "string" },
+              "source":        { "$ref": "#/$defs/source_ref" }
+            }
+          },
+          {
+            "title": "Device Line",
+            "type": "object",
+            "required": ["element_id", "type", "device", "start_station", "start_offset", "end_station", "end_offset", "spacing_ft"],
+            "additionalProperties": false,
+            "properties": {
+              "element_id":    { "type": "string" },
+              "type":          { "type": "string", "const": "device_line" },
+              "device":        { "type": "string", "enum": ["cone","drum","vertical_panel","barrier","tubular_marker"] },
+              "start_station": { "type": "number" },
+              "start_offset":  { "type": "number" },
+              "end_station":   { "type": "number" },
+              "end_offset":    { "type": "number" },
+              "spacing_ft":    { "type": "number", "minimum": 1 },
+              "side":          { "type": "string", "enum": ["left","right"] },
+              "zone_id":       { "type": "string" },
+              "source":        { "$ref": "#/$defs/source_ref" }
+            }
+          },
+          {
+            "title": "Arrow Board",
+            "type": "object",
+            "required": ["element_id", "type", "mode", "position"],
+            "additionalProperties": false,
+            "properties": {
+              "element_id": { "type": "string" },
+              "type":       { "type": "string", "const": "arrow_board" },
+              "mode":       { "type": "string", "enum": ["flashing","sequential_arrow","sequential_chevron","diamond","double_arrow"] },
+              "position":   { "$ref": "#/$defs/station_offset" },
+              "zone_id":    { "type": "string" },
+              "source":     { "$ref": "#/$defs/source_ref" }
+            }
+          },
+          {
+            "title": "Flagger",
+            "type": "object",
+            "required": ["element_id", "type", "position"],
+            "additionalProperties": false,
+            "properties": {
+              "element_id": { "type": "string" },
+              "type":       { "type": "string", "const": "flagger" },
+              "position":   { "$ref": "#/$defs/station_offset" },
+              "controls":   { "type": "string", "enum": ["NB","SB","EB","WB","BOTH"] },
+              "zone_id":    { "type": "string" },
+              "source":     { "$ref": "#/$defs/source_ref" }
+            }
+          }
+        ]
+      }
+    },
+
+    "predictions": {
+      "type": "object",
+      "description": "AI model output. Written by the prediction engine, read by dashboards and planners.",
+      "additionalProperties": false,
+      "properties": {
+        "model_version":   { "type": "string" },
+        "predicted_at":    { "type": "string", "format": "date-time" },
+        "horizon_minutes": { "type": "integer", "description": "How far ahead the model is predicting (e.g. 15, 30, 60)." },
+        "by_zone":         { "type": "array", "items": { "$ref": "#/$defs/zone_prediction" } },
+        "total_delay_sec": { "type": "number", "description": "Predicted average corridor delay end-to-end." },
+        "max_queue_ft":    { "type": "number", "description": "Predicted worst-case queue across all zones." },
+        "risk_level":      { "type": "string", "enum": ["low","moderate","high","critical"], "description": "Overall congestion risk at the predicted horizon." },
+        "recommendations": {
+          "type": "array",
+          "description": "Actionable suggestions from the model.",
+          "items": {
+            "type": "object",
+            "required": ["action", "priority"],
+            "additionalProperties": false,
+            "properties": {
+              "action":       { "type": "string", "description": "What to do, e.g. 'Extend advance warning zone 500 ft upstream'." },
+              "zone_id":      { "type": "string" },
+              "element_id":   { "type": "string" },
+              "priority":     { "type": "string", "enum": ["info","low","medium","high","urgent"] },
+              "reason":       { "type": "string", "description": "Why the model suggests this." }
+            }
+          }
+        }
+      }
+    }
+
+  }
+}

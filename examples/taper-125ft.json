@@ -1,0 +1,37 @@
+{
+  "format_version": "1.0.0",
+  "site": {
+    "name": "Downstream taper example",
+    "coordinate_system": "local station",
+    "units": "feet",
+    "road_name": "Example Road",
+    "state": "OR"
+  },
+  "typical_application": {
+    "type": "lane_closure",
+    "direction": "NB",
+    "posted_speed_mph": 35,
+    "lanes_total": 2,
+    "lanes_closed": 1
+  },
+  "zones": [
+    {
+      "zone_id": "termination-1",
+      "type": "termination",
+      "start_station": 1000,
+      "end_station": 1200
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "taper-1",
+      "type": "taper",
+      "taper_type": "downstream",
+      "start_station": 1000,
+      "end_station": 1125,
+      "start_offset": 0,
+      "end_offset": 12,
+      "zone_id": "termination-1"
+    }
+  ]
+}

@@ -1,164 +1,88 @@
-from rules.geometry import advance_signs_by_distance
+"""Initial sign-rule coverage and private calculations, with no caller context.
 
-#sign-01 checker
+The unchanged schema cannot establish roadway applicability. These four rules
+therefore never turn the private numeric comparisons into production findings.
+"""
 
-SIGN_01_TABLE = {
-    "urban_low_speed":    {"A": 100, "B": 100,  "C": 100},
-    "urban_high_speed":   {"A": 350, "B": 350,  "C": 350},
-    "rural":              {"A": 500, "B": 500,  "C": 500},
-    "expressway_freeway": {"A": 1000, "B": 1500, "C": 2640},
+from rule_framework import Citation, Rule, RuleMetadata, RuleResult
+from rules.geometry import _abc_spacings, _advance_signs_by_distance, _advance_warning_extent_ft
+
+
+_SOURCE = "CA MUTCD"
+_FEDERAL_ABC_FT = {
+    "urban_low_speed": (100, 100, 100),
+    "urban_high_speed": (350, 350, 350),
+    "rural": (500, 500, 500),
+    "expressway_freeway": (1000, 1500, 2640),
 }
-SIGN_01_CITATION = "MUTCD 11th Ed., Table 6B-1; Sec. 6B.04 para 07, p. 773"
-
-def check_sign_01(plan, ctx):
-    violations = []
-
-    required = SIGN_01_TABLE.get(ctx.get("road_category"))
-    if required is None:
-        return violations
-
-    to_ft = 1.0 if plan["site"]["units"] == "feet" else 3.28084
-    tolerance_ft = ctx.get("sign_spacing_tolerance_ft", 0)
-
-    zones = plan["zones"]
-    adv = [z for z in zones if z["type"] == "advance_warning"]
-    trans = [z for z in zones if z["type"] == "transition"]
-    if not adv or not trans:
-        return violations
-
-    # Which way is traffic moving? Advance warning is upstream of the transition.
-    adv_mid = sum(z["start_station"] + z["end_station"] for z in adv) / (2 * len(adv))
-    trans_mid = sum(z["start_station"] + z["end_station"] for z in trans) / (2 * len(trans))
-    direction = 1 if adv_mid < trans_mid else -1
-
-    # Point A reference: where the transition begins, on the approaching side.
-    if direction == 1:
-        ref = min(z["start_station"] for z in trans)
-    else:
-        ref = max(z["end_station"] for z in trans)
-
-    adv_lo = min(z["start_station"] for z in adv)
-    adv_hi = max(z["end_station"] for z in adv)
-
-    # Advance warning signs, with distance upstream of the reference point.
-    signs = []
-    for el in plan["elements"]:
-        if el["type"] != "sign":
-            continue
-        st = el["position"]["station"]
-        if not (adv_lo <= st <= adv_hi):
-            continue
-        dist_ft = (ref - st) * direction * to_ft
-        if dist_ft > 0:
-            signs.append((dist_ft, el["element_id"]))
-    signs.sort()          # closest to the work zone first
-    signs = signs[:3]     # table only defines A, B, C
-
-    # Gap list: A = ref to 1st sign, B = 1st to 2nd, C = 2nd to 3rd
-    prev_dist, prev_id = 0.0, "transition start"
-    for label, (dist, sign_id) in zip("ABC", signs):
-        gap = dist - prev_dist
-        need = required[label]
-        if gap < need - tolerance_ft:
-            violations.append({
-                "rule_id": "SIGN-01",
-                "severity": "warning",           # Guidance = warning
-                "element_ids": [sign_id],
-                "message": (f"Spacing {label} between {prev_id} and {sign_id} is "
-                            f"{gap:.0f} ft; minimum for {ctx['road_category']} is {need} ft"),
-                "measured": gap,
-                "required": need,
-                "shortfall": need - gap,
-                "citation": SIGN_01_CITATION,
-            })
-        prev_dist, prev_id = dist, sign_id
-
-    return violations
 
 
-#sign-02 checker
-SIGN_02_CITATION = "MUTCD 11th Ed., Sec. 6B.04 para 04, p. 771"
-URBAN = {"urban_low_speed", "urban_high_speed"}
+def _abc_comparisons(document, warning_sign_ids, recommended_ft):
+    """Pure advisory comparisons: (label, measured ft, recommended ft, sign ID).
 
-def check_sign_02(plan, ctx):
-    #nearest advance warning sign 4*S to 8*S ft from the TTC zone (urban)
-    if ctx.get("road_category") not in URBAN:
-        return []
+    No category selection or jurisdiction decision is made here. In particular,
+    the private federal table is not executable California rule coverage.
+    """
+    return tuple((label, measured, recommended, sign_id)
+                 for (label, measured, sign_id), recommended in
+                 zip(_abc_spacings(document, warning_sign_ids), recommended_ft))
 
-    signs = advance_signs_by_distance(plan)
-    if not signs:
-        return []
 
-    S = plan["typical_application"]["posted_speed_mph"]
-    low = 4*S
-    high = 8*S
+def _urban_distance_comparison(document, warning_sign_ids):
+    """Nearest distance and 4S/8S endpoints in ft; S stays in declared mph."""
+    distance, sign_id = _advance_signs_by_distance(document, warning_sign_ids)[0]
+    low, high = _speed_distance_range(document["typical_application"]["posted_speed_mph"], 4, 8)
+    return distance, low, high, sign_id
 
-    dist, sign_id = signs[0]
-    if low <= dist <= high:
-        return[]
 
-    required = low if dist < low else high
-    return [{
-            "rule_id": "SIGN-02",
-            "severity": "warning",                     # Guidance
-            "element_ids": [sign_id],
-            "message": (f"Nearest advance warning sign {sign_id} is {dist:.0f} ft from the "
-                        f"transition; should be {low}-{high} ft at {S} mph"),
-            "measured": dist,
-            "required": (low, high),
-            "shortfall": abs(dist - required),
-            "citation": SIGN_02_CITATION,
-    }]
+def _speed_distance_range(speed_mph, low_multiplier, high_multiplier):
+    """Numeric endpoints only; does not resolve Z-022's 'first warning sign'."""
+    return low_multiplier * speed_mph, high_multiplier * speed_mph
 
-#sign_03 checker
-SIGN_03_CITATION = "MUTCD 11th Ed., Sec. 6B.04 para 06, p. 771"
-RURAL = {"rural"}
-SIGN_03_AREA_MIN_FT = 1500
 
-def check_sign_03(plan, ctx):
-    if ctx.get("road_category") not in RURAL:
-        return []
+def _open_highway_extent_comparison(document):
+    """Single warning-area length and the 1,500 ft advisory comparison value.
 
-    signs = advance_signs_by_distance(plan)
-    if not signs:
-        return []
+    Calling this calculation does not establish open-highway applicability.
+    """
+    return _advance_warning_extent_ft(document), 1500
 
-    violations = []
-    S = plan["typical_application"]["posted_speed_mph"]
-    low = 8*S
-    high = 12*S
 
-    dist, sign_id = signs[0]
-    if not (low <= dist <= high):
-        required = low if dist < low else high
-        violations.append({
-            "rule_id": "SIGN-03",
-            "check": "first_sign_distance",
-            "severity": "warning",
-            "element_ids": [sign_id],
-            "message": f"Nearest sign {sign_id} is {dist:.0f} ft out; should be {low}-{high} ft at {S} mph",
-            "measured": dist,
-            "required": (low, high),
-            "shortfall": abs(dist - required),
-            "citation": SIGN_03_CITATION,
-        })
+Z026 = RuleMetadata(
+    "mutcd.Z-026", "Federal baseline — advance warning sign spacing", "GUIDANCE",
+    (Citation(_SOURCE, "Z-026 — GUIDANCE — Federal baseline — advance warning sign spacing",
+              "Federal MUTCD §6B.04 para. 07; Table 6B-1; §6H.02 para. 01; PDF p. 133, 140, 171; printed p. 1223, 1230, 1261."),),
+    ("Roadway category and agency/site-road-owner low/high urban speed classification are absent from schema 1.0.0.",
+     "CA-005 — GUIDANCE — California replacement — advance warning sign spacing is unimplemented; the federal table is not applied to California. CA-005 cites CA MUTCD §6B.04 para. 07; Table 6B-1; PDF p. 133, 140; printed p. 1223, 1230. Its between-band interpolation and flagged footnote error remain unresolved.",
+     "Spacing recommendations are approximate guidance subject to engineering judgment and field adjustment."),
+)
+Z020 = RuleMetadata(
+    "mutcd.Z-020", "Urban nearest warning sign placement", "GUIDANCE",
+    (Citation(_SOURCE, "Z-020 — GUIDANCE — Urban nearest warning sign placement",
+              "Federal MUTCD §6B.04, para. 04; PDF p. 133; printed p. 1223."),),
+    ("Urban-street applicability is absent from schema 1.0.0; names, highway numbers, speed, and free text do not establish it.",),
+)
+Z022 = RuleMetadata(
+    "mutcd.Z-022", "Rural first warning sign placement", "GUIDANCE",
+    (Citation(_SOURCE, "Z-022 — GUIDANCE — Rural first warning sign placement",
+              "Federal MUTCD §6B.04, para. 06; PDF p. 133; printed p. 1223."),),
+    ("Rural-highway applicability is absent from schema 1.0.0.",
+     "The 'first warning sign' endpoint is ambiguous: first encountered upstream versus Table 6B-1's nearest sign. No endpoint is selected for the 8S–12S recommendation."),
+)
+Z022B = RuleMetadata(
+    "mutcd.Z-022-B", "Open-highway advance warning extent", "GUIDANCE",
+    (Citation(_SOURCE, "Z-022-B — GUIDANCE — Open-highway advance warning extent",
+              "Federal MUTCD §6B.04, para. 06; PDF p. 133; printed p. 1223."),),
+    ("Open-highway conditions, where two or more advance warning signs are normally used, are absent from schema 1.0.0. The 1,500 ft recommendation is not a universal rural requirement.",),
+)
 
-    to_ft = 1.0 if plan["site"]["units"] == "feet" else 3.28084
-    adv = [z for z in plan["zones"] if z["type"] == "advance_warning"]
-    if adv:
-        length = sum(abs(z["end_station"] - z["start_station"]) for z in adv) * to_ft
-        if length < SIGN_03_AREA_MIN_FT:
-            violations.append({
-                "rule_id": "SIGN-03",
-                "check": "advance_area_length",
-                "severity": "warning",
-                "element_ids": [z["zone_id"] for z in adv],
-                "message": f"Advance warning area is {length:.0f} ft; should be at least {SIGN_03_AREA_MIN_FT} ft",
-                "measured": length,
-                "required": SIGN_03_AREA_MIN_FT,
-                "shortfall": SIGN_03_AREA_MIN_FT - length,
-                "citation": SIGN_03_CITATION,
-        })
 
-    return violations
-            
+def _not_evaluable(metadata):
+    def evaluate(document):
+        return RuleResult(metadata.rule_id, "not_evaluable", False,
+                          reason=" ".join(metadata.limitations))
+    return evaluate
+
+
+SIGN_RULES = tuple(Rule(metadata, _not_evaluable(metadata))
+                   for metadata in (Z026, Z020, Z022, Z022B))
