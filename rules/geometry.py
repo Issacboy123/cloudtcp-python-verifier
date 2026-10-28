@@ -137,3 +137,23 @@ def _abc_spacings(document, warning_sign_ids):
 def _advance_warning_extent_ft(document):
     approach = _single_approach(document)
     return _station_length_ft(approach.warning_low, approach.warning_high, document["site"]["units"])
+
+
+def _offset_width_ft(element):
+    """Lateral offset width W from taper end offsets (ft fields, schema-declared)."""
+    return abs(float(element["end_offset"]) - float(element["start_offset"]))
+
+
+def _taper_length_l_ft(width_ft, speed_mph):
+    """Table 6B-4 L. No branch for 40 < S < 45 (do not interpolate)."""
+    if speed_mph <= 40:
+        return width_ft * (speed_mph ** 2) / 60.0
+    if speed_mph >= 45:
+        return width_ft * speed_mph
+    raise _GeometryNotEvaluable(
+        "No Table 6B-4 formula branch is supplied for 40 < S < 45 mph."
+    )
+
+
+def _posted_speed_mph(document):
+    return float(document["typical_application"]["posted_speed_mph"])

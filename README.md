@@ -158,6 +158,14 @@ rules, never comprehensive MUTCD compliance. The default registry returns result
 in this order: `mutcd.Z-026`, `mutcd.Z-020`, `mutcd.Z-022`, `mutcd.Z-022-B`,
 `mutcd.T-013`.
 
+TCP-W1-1 Part 6 extraction rules (SIGN/TAPER/CHAN/ARROW/FLAG/…) live in
+`W1_REGISTRY` (`from verifier import W1_REGISTRY`) and cite
+[TCP-W1-1 Rules.md](TCP-W1-1%20Rules.md). Pass `registry=W1_REGISTRY` to
+`verify_document` / `verify_file`. Each result may include a graded `score` in
+`[0, 1]` when the rule evaluates; stubs that lack schema facts return
+`not_evaluable` with `score=null`. Compliant and violating plans for every W1
+rule are under `examples/w1/<RULE-ID>/`.
+
 The four sign provisions always report `not_evaluable`: schema 1.0.0 lacks
 roadway/applicability classifications. Names, highway numbers, speeds and free
 text cannot supply those facts. Z-022 also retains the unresolved meaning of

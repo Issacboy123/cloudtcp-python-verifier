@@ -57,6 +57,7 @@ class RuleResult:
     findings: tuple[Finding, ...] = ()
     reason: str | None = None
     errors: tuple[Diagnostic, ...] = ()
+    score: float | None = None  # Graded 0–1 when evaluated; None if not scored.
 
 
 @dataclass(frozen=True)
@@ -147,6 +148,10 @@ def validate_result(result, metadata):
     _require(type(result.findings) is tuple, "Findings must be a tuple.")
     _require(type(result.errors) is tuple, "Errors must be a tuple.")
     _require(result.reason is None or _text(result.reason), "Invalid reason.")
+    if result.score is not None:
+        _require(type(result.score) in (int, float) and type(result.score) is not bool
+                 and math.isfinite(result.score) and 0 <= result.score <= 1,
+                 "score must be a finite number in [0, 1].")
     if result.status == "fail":
         _require(bool(result.findings), "fail requires findings.")
     else:

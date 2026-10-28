@@ -44,7 +44,9 @@ def site(minimal):
 def t013(site):
     report = verify_document(site)
     assert report.input_valid and not report.errors
-    return report.rule_results[-1]
+    matches = [r for r in report.rule_results if r.rule_id == "mutcd.T-013"]
+    assert len(matches) == 1
+    return matches[0]
 
 
 def test_imports_registry_order_and_guidance_only():
