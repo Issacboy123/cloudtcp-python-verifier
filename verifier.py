@@ -15,9 +15,12 @@ from rule_framework import (
 )
 from signs_verifier import SIGN_RULES
 from rules.tapers import TAPER_RULE
+from rules.w1_registry import w1_rules
 
 
+# Production default remains the five initial entries. TCP-W1-1 rules use W1_REGISTRY.
 DEFAULT_REGISTRY = RuleRegistry((*SIGN_RULES, TAPER_RULE))
+W1_REGISTRY = RuleRegistry(w1_rules())
 REPORT_VERSION = "1.0.0"
 COVERAGE_SCOPE = "implemented_rules_only"
 BASE_LIMITATIONS = (

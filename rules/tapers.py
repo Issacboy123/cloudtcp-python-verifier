@@ -2,6 +2,7 @@
 
 from rule_framework import Citation, Finding, Rule, RuleMetadata, RuleResult
 from rules.geometry import _in_range, _station_length_ft
+from rules.scoring import aggregate_score, range_score
 
 
 T013 = RuleMetadata(
@@ -14,6 +15,7 @@ T013 = RuleMetadata(
 
 def _downstream_taper_lengths(document):
     findings = []
+    scores = []
     count = 0
     units = document["site"]["units"]
     for index, element in enumerate(document["elements"]):
@@ -22,6 +24,8 @@ def _downstream_taper_lengths(document):
         count += 1
         start, end = element["start_station"], element["end_station"]
         length = _station_length_ft(start, end, units)
+        subject_score = range_score(length, 50, 100)
+        scores.append(subject_score)
         if _in_range(length, 50, 100, units=units):
             continue
         findings.append(Finding(
@@ -33,15 +37,17 @@ def _downstream_taper_lengths(document):
             (f"/elements/{index}/taper_type", f"/elements/{index}/start_station",
              f"/elements/{index}/end_station", "/site/units"),
             T013.citations,
-            {"length_ft": length, "recommended_lower_ft": 50, "recommended_upper_ft": 100},
+            {"length_ft": length, "recommended_lower_ft": 50, "recommended_upper_ft": 100,
+             "score": subject_score},
             "feet",
         ))
     if not count:
         return RuleResult(T013.rule_id, "not_applicable", True,
                           reason="The input contains no downstream taper elements.")
+    overall = aggregate_score(scores)
     if findings:
-        return RuleResult(T013.rule_id, "fail", True, tuple(findings))
-    return RuleResult(T013.rule_id, "pass", True)
+        return RuleResult(T013.rule_id, "fail", True, tuple(findings), score=overall)
+    return RuleResult(T013.rule_id, "pass", True, score=overall)
 
 
 TAPER_RULE = Rule(T013, _downstream_taper_lengths)

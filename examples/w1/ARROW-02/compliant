@@ -1,0 +1,65 @@
+{
+  "format_version": "1.0.0",
+  "site": {
+    "name": "W1 plan",
+    "coordinate_system": "local station",
+    "units": "feet",
+    "road_name": "Example Road",
+    "state": "OR"
+  },
+  "typical_application": {
+    "type": "multi_lane_closure",
+    "direction": "NB",
+    "posted_speed_mph": 45,
+    "lanes_total": 4,
+    "lanes_closed": 2
+  },
+  "zones": [
+    {
+      "zone_id": "Z-aw",
+      "type": "advance_warning",
+      "start_station": 0,
+      "end_station": 500
+    },
+    {
+      "zone_id": "Z-tr",
+      "type": "transition",
+      "start_station": 500,
+      "end_station": 1000
+    },
+    {
+      "zone_id": "Z-work",
+      "type": "work",
+      "start_station": 1000,
+      "end_station": 2000
+    },
+    {
+      "zone_id": "Z-term",
+      "type": "termination",
+      "start_station": 2000,
+      "end_station": 2200
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "A1",
+      "type": "arrow_board",
+      "mode": "sequential_arrow",
+      "position": {
+        "station": 480,
+        "offset": 6,
+        "side": "right"
+      }
+    },
+    {
+      "element_id": "A2",
+      "type": "arrow_board",
+      "mode": "sequential_arrow",
+      "position": {
+        "station": 490,
+        "offset": 6,
+        "side": "right"
+      }
+    }
+  ]
+}
