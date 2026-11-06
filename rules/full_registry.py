@@ -18,6 +18,12 @@ CA_REPLACEMENTS = {
 }
 
 
+CA_SUPPLEMENTS = {
+    "CA-007": ("mutcd.TAPER-01", "mutcd.TAPER-02"),
+    "CA-008": ("mutcd.CHAN-01",),
+}
+
+
 def _state(document):
     return document["site"]["state"].strip().upper()
 
@@ -76,9 +82,7 @@ def full_rules():
                 raise ValueError(f"Catalog overstates automated capability: {rule_id}")
         # Delegated California evaluations retain the federal source trail while
         # producing a single finding for the same measured deficiency.
-        supplemented = {"CA-007": ("mutcd.TAPER-01", "mutcd.TAPER-02"),
-                        "CA-008": ("mutcd.CHAN-01",)}
-        for shared_id in supplemented.get(key, ()):
+        for shared_id in CA_SUPPLEMENTS.get(key, ()):
             citations = tuple(dict.fromkeys((*citations, *(
                 citation for clause in grouped.get(shared_id, ()) for citation in clause.citations
             ))))

@@ -1,4 +1,4 @@
-"""Private longitudinal geometry in feet; callers select eligible warning signs.
+"""Shared internal longitudinal geometry in feet; callers select eligible warning signs.
 
 No sign-code or roadway classifier lives here. Input dictionaries are never
 normalized in place: only station differences are converted, so explicit _ft,
@@ -13,11 +13,11 @@ import math
 METERS_PER_FOOT = 0.3048
 
 
-class _GeometryNotEvaluable(ValueError):
+class GeometryNotEvaluable(ValueError):
     """Required geometry or subject direction cannot be established uniquely."""
 
 
-def _station_length_ft(start, end, units):
+def station_length_ft(start, end, units):
     """Use decimal station values without cancellation or intermediate overflow.
 
     Return exact integer feet where possible, otherwise the nearest float. Beyond
@@ -49,13 +49,13 @@ def _conversion_noise_ft(boundary, units):
     return 2 * math.ulp(float(boundary))
 
 
-def _in_range(value, lower, upper, *, units="feet"):
+def in_range(value, lower, upper, *, units="feet"):
     return (lower - _conversion_noise_ft(lower, units) <= value
             <= upper + _conversion_noise_ft(upper, units))
 
 
 @dataclass(frozen=True)
-class _Approach:
+class Approach:
     warning_zone_id: str
     transition_zone_id: str
     warning_low: float
@@ -64,27 +64,27 @@ class _Approach:
     station_direction: int
 
 
-def _single_approach(document):
+def single_approach(document):
     warning = [z for z in document["zones"] if z["type"] == "advance_warning"]
     transition = [z for z in document["zones"] if z["type"] == "transition"]
     if len(warning) != 1 or len(transition) != 1:
-        raise _GeometryNotEvaluable("A single advance-warning/transition pair is required.")
+        raise GeometryNotEvaluable("A single advance-warning/transition pair is required.")
     aw, tr = warning[0], transition[0]
     aw_low, aw_high = sorted((aw["start_station"], aw["end_station"]))
     tr_low, tr_high = sorted((tr["start_station"], tr["end_station"]))
     if aw_low == aw_high or tr_low == tr_high:
-        raise _GeometryNotEvaluable("Advance-warning and transition zones must be nondegenerate.")
+        raise GeometryNotEvaluable("Advance-warning and transition zones must be nondegenerate.")
     # Adjacent zones may share an endpoint, but their interiors cannot overlap.
     if aw_high <= tr_low:
         direction, reference = 1, tr_low
     elif tr_high <= aw_low:
         direction, reference = -1, tr_high
     else:
-        raise _GeometryNotEvaluable("Advance-warning and transition zones overlap.")
-    return _Approach(aw["zone_id"], tr["zone_id"], aw_low, aw_high, reference, direction)
+        raise GeometryNotEvaluable("Advance-warning and transition zones overlap.")
+    return Approach(aw["zone_id"], tr["zone_id"], aw_low, aw_high, reference, direction)
 
 
-def _advance_signs_by_distance(document, warning_sign_ids):
+def advance_signs_by_distance(document, warning_sign_ids):
     """Return (feet upstream of transition, ID), nearest first.
 
     The caller explicitly selects supported warning IDs; geometry does not inspect
@@ -93,14 +93,14 @@ def _advance_signs_by_distance(document, warning_sign_ids):
     Opposite-facing or out-of-area signs are excluded. No compass label determines
     increasing/decreasing station direction. Tied stations have no unique order.
     """
-    approach = _single_approach(document)
+    approach = single_approach(document)
     traffic_direction = document["typical_application"]["direction"]
     if traffic_direction == "BOTH":
-        raise _GeometryNotEvaluable("Warning-sign approach direction is ambiguous (BOTH).")
+        raise GeometryNotEvaluable("Warning-sign approach direction is ambiguous (BOTH).")
     selected = frozenset(warning_sign_ids)
     elements = {e["element_id"]: e for e in document["elements"]}
     if not selected <= elements.keys() or any(elements[i]["type"] != "sign" for i in selected):
-        raise _GeometryNotEvaluable("Selected warning IDs must identify existing signs.")
+        raise GeometryNotEvaluable("Selected warning IDs must identify existing signs.")
     signs = []
     for sign_id in selected:
         sign = elements[sign_id]
@@ -108,24 +108,24 @@ def _advance_signs_by_distance(document, warning_sign_ids):
         if not approach.warning_low <= station <= approach.warning_high:
             continue
         if "face_direction" not in sign:
-            raise _GeometryNotEvaluable("A selected warning sign has no explicit facing direction.")
+            raise GeometryNotEvaluable("A selected warning sign has no explicit facing direction.")
         if sign["face_direction"] != traffic_direction:
             continue
         if (approach.transition_reference - station) * approach.station_direction <= 0:
-            raise _GeometryNotEvaluable("A warning sign is not strictly upstream of the transition.")
-        distance = _station_length_ft(station, approach.transition_reference, document["site"]["units"])
+            raise GeometryNotEvaluable("A warning sign is not strictly upstream of the transition.")
+        distance = station_length_ft(station, approach.transition_reference, document["site"]["units"])
         signs.append((distance, sign_id))
     signs.sort()
     if not signs:
-        raise _GeometryNotEvaluable("No selected warning signs serve the single approach.")
+        raise GeometryNotEvaluable("No selected warning signs serve the single approach.")
     if len({distance for distance, _ in signs}) != len(signs):
-        raise _GeometryNotEvaluable("Warning signs at the same station have ambiguous ordering.")
+        raise GeometryNotEvaluable("Warning signs at the same station have ambiguous ordering.")
     return tuple(signs)
 
 
-def _abc_spacings(document, warning_sign_ids):
+def abc_spacings(document, warning_sign_ids):
     """Available A/B/C gaps, never a requirement to provide three signs."""
-    signs = _advance_signs_by_distance(document, warning_sign_ids)[:3]
+    signs = advance_signs_by_distance(document, warning_sign_ids)[:3]
     previous = 0
     gaps = []
     for label, (distance, sign_id) in zip("ABC", signs):
@@ -134,26 +134,26 @@ def _abc_spacings(document, warning_sign_ids):
     return tuple(gaps)
 
 
-def _advance_warning_extent_ft(document):
-    approach = _single_approach(document)
-    return _station_length_ft(approach.warning_low, approach.warning_high, document["site"]["units"])
+def advance_warning_extent_ft(document):
+    approach = single_approach(document)
+    return station_length_ft(approach.warning_low, approach.warning_high, document["site"]["units"])
 
 
-def _offset_width_ft(element):
+def offset_width_ft(element):
     """Lateral offset width W from taper end offsets (ft fields, schema-declared)."""
     return abs(float(element["end_offset"]) - float(element["start_offset"]))
 
 
-def _taper_length_l_ft(width_ft, speed_mph):
+def taper_length_l_ft(width_ft, speed_mph):
     """Table 6B-4 L. No branch for 40 < S < 45 (do not interpolate)."""
     if speed_mph <= 40:
         return width_ft * (speed_mph ** 2) / 60.0
     if speed_mph >= 45:
         return width_ft * speed_mph
-    raise _GeometryNotEvaluable(
+    raise GeometryNotEvaluable(
         "No Table 6B-4 formula branch is supplied for 40 < S < 45 mph."
     )
 
 
-def _posted_speed_mph(document):
+def posted_speed_mph(document):
     return float(document["typical_application"]["posted_speed_mph"])

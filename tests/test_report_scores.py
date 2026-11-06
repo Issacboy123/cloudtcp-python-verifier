@@ -9,9 +9,10 @@ from pathlib import Path
 import pytest
 
 from rule_framework import Citation, Finding, Rule, RuleMetadata, RuleRegistry, RuleResult, finding_key
+from reporting import format_text
 from verifier import (
     ALL_REGISTRY, LEGACY_REGISTRY, W1_REGISTRY, ReportRuleResult,
-    _text_report, verify_document, verify_file,
+    verify_document, verify_file,
 )
 
 
@@ -57,7 +58,7 @@ def test_passing_scores_serialize_as_integer_one(minimal, score):
     assert type(payload["rule_results"][0]["score"]) is int
     assert payload["rule_results"][0]["status"] == "pass"
     assert report.exit_code == 0
-    assert "Score: 1" in _text_report(report)
+    assert "Score: 1" in format_text(report)
     assert result.score == score
 
 
@@ -71,7 +72,7 @@ def test_partial_failure_scores_zero_and_keeps_findings(minimal):
     assert not report.evaluation_complete
     assert report.rule_results[0].score == 0
     assert report.findings == (finding,)
-    text = _text_report(report)
+    text = format_text(report)
     assert "fail; complete=False" in text and "Score: 0" in text
     assert "Other subjects lack width." in text
 
@@ -80,7 +81,7 @@ def test_missing_facts_score_zero_in_json_and_text(minimal):
     result = RuleResult(META.rule_id, "not_evaluable", False, reason="Missing facts.")
     report = report_for(minimal, result)
     assert report.to_dict()["rule_results"][0]["score"] == 0
-    assert "Score: 0" in _text_report(report)
+    assert "Score: 0" in format_text(report)
     assert report.exit_code == 3
 
 

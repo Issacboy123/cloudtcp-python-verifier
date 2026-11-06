@@ -1,159 +1,35 @@
-"""Verification API and checkout CLI for implemented-rule coverage reports."""
+"""Verification API and compatible entry point for the checkout CLI."""
 
-import argparse
-from collections import Counter
 from copy import deepcopy
-from contextlib import redirect_stdout
-from dataclasses import asdict, dataclass, replace
-import json
+from dataclasses import asdict, replace
 from pathlib import Path
 import sys
 
 from ingestion import InputValidationError, load_document, validate_document
 from rule_framework import (
-    Citation, Diagnostic, Finding, Rule, RuleMetadata, RuleRegistry, RuleResult,
-    diagnostic_key, finding_key, validate_result,
+    Citation as Citation, Diagnostic, Rule as Rule, RuleMetadata as RuleMetadata,
+    RuleRegistry, RuleResult, diagnostic_key, finding_key, validate_result,
+    Finding as Finding,
+)
+from reporting import (
+    BASE_LIMITATIONS as BASE_LIMITATIONS, COVERAGE_SCOPE as COVERAGE_SCOPE,
+    REPORT_VERSION as REPORT_VERSION, Report as Report, ReportRuleResult as ReportRuleResult,
+    build_report, exception_message, exit_code as exit_code,
 )
 from signs_verifier import SIGN_RULES
 from rules.tapers import TAPER_RULE
 from rules.w1_registry import w1_rules
-from rules.full_registry import ALL_REGISTRY, automated_rule_ids, source_coverage
-from rules.source_catalog import SourceClause
+from rules.full_registry import ALL_REGISTRY as ALL_REGISTRY
 
 
-# Preserve the historical selections while making documented coverage the default.
+# Preserve historical selections while making documented coverage the default.
 LEGACY_REGISTRY = RuleRegistry((*SIGN_RULES, TAPER_RULE))
 W1_REGISTRY = RuleRegistry(w1_rules())
 DEFAULT_REGISTRY = ALL_REGISTRY
-# Minor report versions add fields; consumers should ignore unknown fields.
-# Input format_version is separate and remains 1.0.0.
-REPORT_VERSION = "2.0.0"
-COVERAGE_SCOPE = "implemented_rules_only"
-BASE_LIMITATIONS = (
-    "Coverage includes only the registered Python rules; it is not comprehensive MUTCD compliance.",
-)
-
-
-@dataclass(frozen=True)
-class ReportRuleResult:
-    """Reported outcome with a binary score; evaluator RuleResult stays unchanged."""
-
-    rule_id: str
-    status: str
-    complete: bool
-    score: int
-    findings: tuple[Finding, ...] = ()
-    reason: str | None = None
-    errors: tuple[Diagnostic, ...] = ()
-
-
-@dataclass(frozen=True)
-class Report:
-    version: str
-    input_valid: bool
-    implemented_rule_ids: tuple[str, ...]
-    evaluation_complete: bool
-    rule_metadata: tuple[RuleMetadata, ...]
-    rule_results: tuple[ReportRuleResult, ...]
-    findings: tuple[Finding, ...]
-    errors: tuple[Diagnostic, ...]
-    limitations: tuple[str, ...]
-    coverage_scope: str = COVERAGE_SCOPE
-    registered_rule_ids: tuple[str, ...] = ()
-    automated_rule_ids: tuple[str, ...] = ()
-    source_coverage: tuple[SourceClause, ...] = ()
-
-    def to_dict(self) -> dict:
-        """Return detached JSON values, preserving array order and every finding."""
-        return json.loads(self.to_json())
-
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), ensure_ascii=False, allow_nan=False,
-                          sort_keys=True, indent=2) + "\n"
-
-    @property
-    def exit_code(self) -> int:
-        return exit_code(self)
-
-
-def exit_code(report: Report | None = None, *, operational_error: bool = False) -> int:
-    """Shared exit decision; Python API infrastructure faults still raise."""
-    if operational_error:
-        return 4
-    if report is None:
-        raise ValueError("A report or operational_error=True is required.")
-    if any(error.code == "operational_error" for error in report.errors) or any(
-        result.status == "error" for result in report.rule_results
-    ) or (
-        report.input_valid and report.errors
-    ):
-        return 4
-    if not report.input_valid:
-        return 2
-    if report.findings:
-        return 1
-    if not report.evaluation_complete:
-        return 3
-    return 0
-
-
-def _report_result(result: RuleResult) -> ReportRuleResult:
-    """Project a validated evaluator outcome without mutating its measurements."""
-    findings = tuple(sorted((
-        replace(finding, values={
-            key: 0 if key == "score" else value
-            for key, value in finding.values.items()
-        })
-        for finding in result.findings
-    ), key=finding_key))
-    return ReportRuleResult(
-        rule_id=result.rule_id, status=result.status, complete=result.complete,
-        score=1 if result.status == "pass" else 0, findings=findings,
-        reason=result.reason, errors=result.errors,
-    )
-
-
-def _report(registry, *, input_errors=(), results=()):
-    results = tuple(_report_result(result) for result in results)
-    metadata = tuple(rule.metadata for rule in registry.rules)
-    findings = tuple(sorted((f for result in results for f in result.findings), key=finding_key))
-    errors = tuple(sorted((*input_errors, *(e for r in results for e in r.errors)), key=diagnostic_key))
-    limitations = list(BASE_LIMITATIONS)
-    coverage = source_coverage(registry)
-    if registry.rules == ALL_REGISTRY.rules:
-        limitations.append(
-            "Source accounting includes both repository rule documents; missing input facts, "
-            "engineering review, and unavailable references remain explicit gaps. "
-            "Non-California sites receive the federal baseline, not other state-specific compliance."
-        )
-    if not metadata:
-        limitations.append("No rules are implemented in the current registry.")
-    for rule in metadata:
-        limitations.extend(f"{rule.rule_id}: {text}" for text in rule.limitations)
-    for result in results:
-        if not result.complete:
-            limitations.append(f"{result.rule_id}: {result.reason}")
-    return Report(
-        version=REPORT_VERSION, input_valid=not input_errors,
-        implemented_rule_ids=tuple(rule.rule_id for rule in metadata),
-        evaluation_complete=not input_errors and not errors and all(r.complete for r in results),
-        rule_metadata=metadata, rule_results=tuple(results), findings=findings,
-        errors=errors, limitations=tuple(limitations),
-        registered_rule_ids=tuple(rule.rule_id for rule in metadata),
-        automated_rule_ids=automated_rule_ids(registry, coverage), source_coverage=coverage,
-    )
 
 
 def _invalid_report(registry, exc):
-    return _report(registry, input_errors=tuple(Diagnostic(**asdict(d)) for d in exc.diagnostics))
-
-
-def _exception_message(exc):
-    try:
-        message = str(exc)
-    except Exception:
-        message = "Exception message unavailable."
-    return f"{type(exc).__name__}: {message}"
+    return build_report(registry, input_errors=tuple(Diagnostic(**asdict(d)) for d in exc.diagnostics))
 
 
 def _error(rule_id, code, reason, exception_type=None):
@@ -173,7 +49,7 @@ def _execute(document, registry, *, results=None):
         try:
             result = rule.evaluator(isolated)
         except Exception as exc:
-            result = _error(rule.metadata.rule_id, "rule_exception", _exception_message(exc), type(exc).__name__)
+            result = _error(rule.metadata.rule_id, "rule_exception", exception_message(exc), type(exc).__name__)
         else:
             try:
                 validate_result(result, rule.metadata)
@@ -185,9 +61,9 @@ def _execute(document, registry, *, results=None):
                                  findings=tuple(sorted(result.findings, key=finding_key)),
                                  errors=tuple(sorted(result.errors, key=diagnostic_key)))
             except Exception as exc:
-                result = _error(rule.metadata.rule_id, "malformed_result", _exception_message(exc), type(exc).__name__)
+                result = _error(rule.metadata.rule_id, "malformed_result", exception_message(exc), type(exc).__name__)
         results.append(result)
-    return _report(registry, results=results)
+    return build_report(registry, results=results)
 
 
 def _registry(registry):
@@ -221,209 +97,11 @@ def verify_file(path: str | Path, *, registry: RuleRegistry | None = None) -> Re
     return _execute(document, selected)
 
 
-class _ArgumentError(ValueError):
-    pass
-
-
-class _Parser(argparse.ArgumentParser):
-    def error(self, message):
-        raise _ArgumentError(message)
-
-    def print_help(self, file=None):
-        # argparse suppresses write OSErrors by default. Let the CLI boundary
-        # convert them and catch flush failures before interpreter shutdown.
-        stream = sys.stdout if file is None else file
-        stream.write(self.format_help())
-        stream.flush()
-
-
-def _operational_report(exc, registry, results, input_valid, report=None):
-    retained = report if report is not None else _report(registry, results=results)
-    completed = {result.rule_id for result in retained.rule_results}
-    pending = tuple(f"{rule_id}: Execution did not reach this check."
-                    for rule_id in retained.implemented_rule_ids if rule_id not in completed)
-    diagnostic = Diagnostic("operational_error", "", _exception_message(exc),
-                            exception_type=type(exc).__name__)
-    return replace(retained, input_valid=input_valid, evaluation_complete=False,
-                   errors=tuple(sorted((*retained.errors, diagnostic), key=diagnostic_key)),
-                   limitations=(*retained.limitations, *pending))
-
-
-def _text_report(report):
-    lines = [
-        f"Report version: {report.version}",
-        f"Input valid: {report.input_valid}",
-        f"Evaluation complete: {report.evaluation_complete}",
-        f"Exit code: {report.exit_code}",
-        f"Coverage: {report.coverage_scope}",
-        "Registered rule IDs: " + (", ".join(report.registered_rule_ids) or "(none)"),
-        "Fully automated rule IDs: " + (", ".join(report.automated_rule_ids) or "(none)"),
-        "Source clause coverage: " + (", ".join(
-            f"{disposition}={count}" for disposition, count in
-            sorted(Counter(clause.disposition for clause in report.source_coverage).items())
-        ) or "(no catalog entries for this registry)"),
-        "implemented_rule_ids is deprecated; it lists registered checks, including unresolved checks.",
-        "Rule results and citations:",
-    ]
-    results = {result.rule_id: result for result in report.rule_results}
-    for meta in report.rule_metadata:
-        result = results.get(meta.rule_id)
-        status = f"{result.status}; complete={result.complete}" if result else "not executed"
-        lines.append(f"  {meta.rule_id} [{meta.classification}]: {status}")
-        if result:
-            lines.append(f"    Score: {result.score}")
-        if result and result.reason:
-            lines.append(f"    Reason: {result.reason}")
-        for citation in meta.citations:
-            lines.append(f"    Citation: {citation.source_document} | "
-                         f"{citation.local_reference} | {citation.mutcd_reference}")
-    lines.append("Findings:")
-    if not report.findings:
-        lines.append("  (none)")
-    for finding in report.findings:
-        lines.extend((
-            f"  {finding.rule_id} [{finding.classification}/{finding.severity}]: {finding.message}",
-            f"    Elements: {', '.join(finding.element_ids) or '(none)'}; "
-            f"zones: {', '.join(finding.zone_ids) or '(none)'}",
-            "    Paths: " + ", ".join(path or "<root>" for path in finding.paths),
-        ))
-        if finding.values:
-            lines.append(f"    Measurements: {json.dumps(finding.values, sort_keys=True)}; "
-                         f"units: {finding.units or '(unspecified)'}")
-        for citation in finding.citations:
-            lines.append(f"    Citation: {citation.source_document} | "
-                         f"{citation.local_reference} | {citation.mutcd_reference}")
-    lines.append("Errors:")
-    if not report.errors:
-        lines.append("  (none)")
-    for error in report.errors:
-        lines.append(f"  {error.rule_id or 'input/CLI'} {error.path or '<root>'} "
-                     f"[{error.code}]: {error.message}")
-        if error.line is not None:
-            lines.append(f"    Line: {error.line}; column: {error.column}")
-        if error.schema_path is not None:
-            lines.append(f"    Schema path: {error.schema_path}")
-    lines.append("Incomplete checks:")
-    incomplete = [result for result in report.rule_results if not result.complete]
-    pending = [rule_id for rule_id in report.implemented_rule_ids if rule_id not in results]
-    for result in incomplete:
-        lines.append(f"  {result.rule_id}: {result.reason}")
-    for rule_id in pending:
-        lines.append(f"  {rule_id}: Not executed.")
-    if not incomplete and not pending:
-        lines.append("  (none)")
-    lines.append("Coverage limitations:")
-    lines.extend(f"  {limitation}" for limitation in report.limitations)
-    return "\n".join(lines) + "\n"
-
-
-def _json_report(report):
-    # ASCII escapes keep JSON portable across console/pipe encodings.
-    return json.dumps(asdict(report), ensure_ascii=True, allow_nan=False,
-                      sort_keys=True, indent=2) + "\n"
-
-
-def _emit_report(report, output_format):
-    emission_started = False
-    try:
-        with redirect_stdout(sys.stderr):
-            output = _json_report(report) if output_format == "json" else _text_report(report)
-        emission_started = True
-        sys.stdout.write(output)
-        sys.stdout.flush()
-    except Exception as exc:
-        report = _operational_report(exc, DEFAULT_REGISTRY, (), report.input_valid, report)
-        fallback = _json_report(report)
-        # Formatting and encoding failures have not emitted report bytes. A
-        # write/flush I/O fault may have emitted some: do not append a second JSON
-        # document to that stream or retry a broken pipe.
-        fallback_written = False
-        if not emission_started or isinstance(exc, UnicodeEncodeError):
-            try:
-                sys.stdout.write(fallback)
-                sys.stdout.flush()
-                fallback_written = True
-            except Exception:
-                pass
-        if not fallback_written:
-            # An unavailable output pipe cannot carry a JSON report. Use stderr
-            # and prevent a second failing stdout flush during interpreter exit.
-            try:
-                sys.stderr.write(fallback)
-                sys.stderr.flush()
-            except Exception:
-                pass  # Neither stream is usable; the process still returns 4.
-            sys.stdout = None
-    return report.exit_code
-
-
-def _requested_registry_name(argv):
-    """Resolve an explicit selector even when another argument cannot parse.
-
-    The full parser still validates every argument. Honor the option terminator
-    and argparse's last-selector-wins behavior; an invalid final value leaves
-    error reports on the default registry.
-    """
-    name = "default"
-    for index, argument in enumerate(argv):
-        if argument == "--":
-            break
-        if argument == "--registry":
-            if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
-                continue
-            value = argv[index + 1]
-        elif argument.startswith("--registry="):
-            value = argument.split("=", 1)[1]
-        else:
-            continue
-        name = value if value in ("default", "all", "legacy", "w1") else "default"
-    return name
-
-
-def _named_registry(name):
-    if name == "w1":
-        return W1_REGISTRY
-    if name == "legacy":
-        return LEGACY_REGISTRY
-    if name == "all":
-        return ALL_REGISTRY
-    return DEFAULT_REGISTRY
-
-
 def main(argv=None):
-    """Run one local file. All infrastructure catches are confined to the CLI."""
-    parser = _Parser(prog="python -m verifier", allow_abbrev=False,
-                     description="Verify one site JSON and report documented rule coverage and gaps.")
-    parser.add_argument("site", metavar="SITE.json")
-    parser.add_argument("--format", choices=("json", "text"), default="json")
-    parser.add_argument("--registry", choices=("default", "all", "legacy", "w1"), default="default",
-                        help="Full documented catalog (default/all), initial five rules (legacy), or W1.")
-    arguments = list(sys.argv[1:] if argv is None else argv)
-    requested = _requested_registry_name(arguments)
-    registry = _named_registry(requested)
-    args = argparse.Namespace(registry=requested)
-    results = []
-    report = None
-    input_valid = False
-    try:
-        parser.parse_args(arguments, namespace=args)
-    except _ArgumentError as exc:
-        report = _report(registry, input_errors=(Diagnostic("cli_arguments", "", str(exc)),))
-        return _emit_report(report, "json")
-    except Exception as exc:
-        return _emit_report(_operational_report(exc, registry, (), False), "json")
-    registry = _named_registry(args.registry)
-    # Trusted evaluator prints and incidental logs must not corrupt JSON stdout.
-    with redirect_stdout(sys.stderr):
-        try:
-            document = load_document(args.site)
-            input_valid = True
-            report = _execute(document, registry, results=results)
-        except InputValidationError as exc:
-            report = _invalid_report(registry, exc)
-        except Exception as exc:
-            report = _operational_report(exc, registry, results, input_valid)
-    return _emit_report(report, args.format)
+    """Run the CLI with this API module's registries and execution boundary."""
+    from verifier_cli import main as cli_main
+
+    return cli_main(argv, api=sys.modules[__name__])
 
 
 if __name__ == "__main__":

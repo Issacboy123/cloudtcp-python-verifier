@@ -2,15 +2,16 @@
 
 import math
 
+from rules.constants import SUPPORTED_CHANNELIZERS
 from rule_framework import Rule, RuleResult
 from rules.geometry import (
-    _GeometryNotEvaluable,
-    _in_range,
-    _offset_width_ft,
-    _posted_speed_mph,
-    _single_approach,
-    _station_length_ft,
-    _taper_length_l_ft,
+    GeometryNotEvaluable,
+    in_range,
+    offset_width_ft,
+    posted_speed_mph,
+    single_approach,
+    station_length_ft,
+    taper_length_l_ft,
 )
 from rules.scoring import aggregate_score, binary_score, max_value_score, min_length_score, range_score
 from rules.w1_common import finding_for, w1_metadata
@@ -105,24 +106,24 @@ def _taper_subjects(document, taper_types):
     for index, element in enumerate(document["elements"]):
         if element["type"] != "taper" or element["taper_type"] not in taper_types:
             continue
-        length = _station_length_ft(element["start_station"], element["end_station"], units)
+        length = station_length_ft(element["start_station"], element["end_station"], units)
         out.append((index, element, length))
     return out, units
 
 
 def _required_l(document, element):
     try:
-        speed = _posted_speed_mph(document)
-        width = _offset_width_ft(element)
+        speed = posted_speed_mph(document)
+        width = offset_width_ft(element)
         if width <= 0 and element.get("lane_width_ft"):
             width = float(element["lane_width_ft"])
         if width <= 0:
-            raise _GeometryNotEvaluable("Taper offset width W cannot be established.")
-        required = _taper_length_l_ft(width, speed)
+            raise GeometryNotEvaluable("Taper offset width W cannot be established.")
+        required = taper_length_l_ft(width, speed)
     except OverflowError as exc:
-        raise _GeometryNotEvaluable("Taper formula exceeds supported numeric range.") from exc
+        raise GeometryNotEvaluable("Taper formula exceeds supported numeric range.") from exc
     if not all(math.isfinite(value) for value in (speed, width, required)):
-        raise _GeometryNotEvaluable("Taper formula exceeds supported numeric range.")
+        raise GeometryNotEvaluable("Taper formula exceeds supported numeric range.")
     return required, width, speed
 
 
@@ -137,12 +138,12 @@ def evaluate_taper_01(document):
     for index, element, length in subjects:
         try:
             required, width, speed = _required_l(document, element)
-        except _GeometryNotEvaluable as exc:
+        except GeometryNotEvaluable as exc:
             incomplete.append(f"{element['element_id']}: {exc}")
             continue
         score = min_length_score(length, required)
         scores.append(score)
-        if _in_range(length, required, float("inf"), units=_units):
+        if in_range(length, required, float("inf"), units=_units):
             continue
         findings.append(finding_for(
             meta,
@@ -169,7 +170,7 @@ def evaluate_taper_02(document):
     for index, element, length in _taper_subjects(document, {"shift", "shoulder"})[0]:
         try:
             required_l, width, speed = _required_l(document, element)
-        except _GeometryNotEvaluable as exc:
+        except GeometryNotEvaluable as exc:
             incomplete.append(f"{element['element_id']}: {exc}")
             continue
         factor = 0.5 if element["taper_type"] == "shift" else 0.33
@@ -177,7 +178,7 @@ def evaluate_taper_02(document):
         evaluated += 1
         score = min_length_score(length, minimum)
         scores.append(score)
-        if _in_range(length, minimum, float("inf"), units=units):
+        if in_range(length, minimum, float("inf"), units=units):
             continue
         findings.append(finding_for(
             meta,
@@ -195,7 +196,7 @@ def evaluate_taper_02(document):
         evaluated += 1
         score = range_score(length, 50, 100)
         scores.append(score)
-        if _in_range(length, 50, 100, units=units):
+        if in_range(length, 50, 100, units=units):
             continue
         findings.append(finding_for(
             meta,
@@ -231,9 +232,8 @@ def evaluate_chan_01(document):
     tapers = [e for e in document["elements"] if e["type"] == "taper"]
     findings, scores, incomplete = [], [], []
     count = 0
-    allowed = {"cone", "tubular_marker", "vertical_panel", "drum"}
     for index, element in enumerate(document["elements"]):
-        if element["type"] != "device_line" or element["device"] not in allowed:
+        if element["type"] != "device_line" or element["device"] not in SUPPORTED_CHANNELIZERS:
             continue
         count += 1
         line_low, line_high = sorted((element["start_station"], element["end_station"]))
@@ -280,7 +280,7 @@ def evaluate_buffer_01(document):
     units = document["site"]["units"]
     scores = []
     for zone in buffers:
-        length = _station_length_ft(zone["start_station"], zone["end_station"], units)
+        length = station_length_ft(zone["start_station"], zone["end_station"], units)
         scores.append(min_length_score(length, suggested))
     return RuleResult(meta.rule_id, "pass", True, score=aggregate_score(scores))
 
@@ -303,8 +303,8 @@ def evaluate_sign_11(document):
         return RuleResult(meta.rule_id, "not_applicable", True,
                           reason="The input contains no sign elements.")
     try:
-        approach = _single_approach(document)
-    except _GeometryNotEvaluable as exc:
+        approach = single_approach(document)
+    except GeometryNotEvaluable as exc:
         return RuleResult(meta.rule_id, "not_evaluable", False, reason=str(exc))
     direction = document["typical_application"]["direction"]
     right = "right" if approach.station_direction == 1 else "left"
@@ -336,8 +336,8 @@ def evaluate_sign_21(document):
         return RuleResult(meta.rule_id, "not_applicable", True,
                           reason="The input contains no flagger elements.")
     try:
-        approach = _single_approach(document)
-    except _GeometryNotEvaluable as exc:
+        approach = single_approach(document)
+    except GeometryNotEvaluable as exc:
         return RuleResult(meta.rule_id, "not_evaluable", False, reason=str(exc))
     direction = document["typical_application"]["direction"]
     if direction == "BOTH":

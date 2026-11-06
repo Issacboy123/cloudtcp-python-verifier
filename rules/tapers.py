@@ -1,7 +1,7 @@
 """The initial downstream-taper advisory length check only."""
 
 from rule_framework import Citation, Finding, Rule, RuleMetadata, RuleResult
-from rules.geometry import _in_range, _station_length_ft
+from rules.geometry import in_range, station_length_ft
 from rules.scoring import aggregate_score, range_score
 
 
@@ -23,10 +23,10 @@ def _downstream_taper_lengths(document):
             continue
         count += 1
         start, end = element["start_station"], element["end_station"]
-        length = _station_length_ft(start, end, units)
+        length = station_length_ft(start, end, units)
         subject_score = range_score(length, 50, 100)
         scores.append(subject_score)
-        if _in_range(length, 50, 100, units=units):
+        if in_range(length, 50, 100, units=units):
             continue
         findings.append(Finding(
             T013.rule_id, "warning", T013.classification,

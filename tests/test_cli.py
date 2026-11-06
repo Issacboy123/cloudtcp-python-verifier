@@ -172,7 +172,8 @@ def test_w1_text_failure_fallback_keeps_selected_registry():
 import verifier
 def broken(report):
     raise RuntimeError("synthetic W1 text failure")
-verifier._text_report = broken
+import verifier_cli
+verifier_cli.format_text = broken
 '''
     process = run_cli(EXAMPLES / "taper-125ft.json", "--registry", "w1", "--format", "text", setup=setup)
     assert process.returncode == 4 and process.stderr == ""
@@ -339,7 +340,8 @@ def test_text_render_failure_retains_report_in_json_fallback():
 import verifier
 def broken(report):
     raise RuntimeError("synthetic text rendering failure")
-verifier._text_report = broken
+import verifier_cli
+verifier_cli.format_text = broken
 '''
     process = run_cli(EXAMPLES / "taper-125ft.json", "--format", "text", "--registry", "legacy", setup=setup)
     assert process.returncode == 4 and process.stderr == ""

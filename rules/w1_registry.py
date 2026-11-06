@@ -1,7 +1,7 @@
 """Register every TCP-W1-1 rule: evaluable logic or explicit not_evaluable stub."""
 
 from rules.w1_common import load_w1_sections, not_evaluable_rule
-from rules.w1_evaluable import EVALUATORS, evaluable_rules
+from rules.w1_evaluable import evaluable_rules
 
 # Schema / judgment gaps for rules that cannot emit production findings yet.
 STUB_LIMITATIONS = {
@@ -201,20 +201,6 @@ STUB_LIMITATIONS = {
         "Planned closure duration (≤20 minutes) and daytime-only constraint are absent from schema 1.0.0.",
     ),
 }
-
-
-def stub_rules():
-    sections = load_w1_sections()
-    rules = []
-    for rule_id in sections:
-        if rule_id in EVALUATORS:
-            continue
-        limits = STUB_LIMITATIONS.get(
-            rule_id,
-            ("Required applicability or measurement facts are absent from schema 1.0.0.",),
-        )
-        rules.append(not_evaluable_rule(rule_id, *limits))
-    return tuple(rules)
 
 
 def w1_rules():

@@ -6,10 +6,15 @@ strengths; sharing a canonical check never turns missing facts into a pass.
 """
 
 from dataclasses import dataclass
+from typing import Literal, TypeAlias
 
-from rule_framework import Citation
+from rule_framework import Citation, Classification
 from rules.source_data import SOURCE_ROWS
 
+
+CoverageDisposition: TypeAlias = Literal[
+    "automated", "partial", "input_blocked", "review_required", "source_blocked", "informational",
+]
 
 DISPOSITIONS = frozenset({
     "automated", "partial", "input_blocked", "review_required",
@@ -24,10 +29,10 @@ class SourceClause:
     clause_id: str
     heading: str
     citation: str
-    classification: str
+    classification: Classification
     text: str
     canonical_rule_id: str | None
-    disposition: str
+    disposition: CoverageDisposition
     limitations: tuple[str, ...]
 
     @property

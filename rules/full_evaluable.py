@@ -10,8 +10,9 @@ from decimal import Decimal
 import math
 import re
 
+from rules.constants import SUPPORTED_CHANNELIZERS
 from rule_framework import Citation, Finding, RuleMetadata, RuleResult
-from rules.geometry import _GeometryNotEvaluable, _in_range, _single_approach, _station_length_ft
+from rules.geometry import GeometryNotEvaluable, in_range, single_approach, station_length_ft
 from rules.tapers import TAPER_RULE
 from rules.w1_evaluable import EVALUATORS as W1_EVALUATORS, EVALUATOR_LIMITATIONS
 
@@ -32,7 +33,6 @@ SUPPORTED_WARNING_CODES = frozenset({
     "W20-1", "W20-3", "W20-4", "W20-5", "W20-5a", "W20-7",
     "W4-2", "W3-4", "W21-5", "W21-5a", "W21-5b",
 })
-SUPPORTED_CHANNELIZERS = frozenset({"cone", "drum", "vertical_panel", "tubular_marker"})
 
 
 def _metadata(rule_id, title, classification="GUIDANCE"):
@@ -149,8 +149,8 @@ def evaluate_ca_007(document):
             incomplete.append(f"{element['element_id']}: speed {speed} mph has no exact CA-007 table row.")
             continue
         minimum = CA_TAPER_FT[speed][{"merge": 0, "shift": 1, "shoulder": 2}[element["taper_type"]]]
-        length = _station_length_ft(element["start_station"], element["end_station"], document["site"]["units"])
-        if not _in_range(length, minimum, float("inf"), units=document["site"]["units"]):
+        length = station_length_ft(element["start_station"], element["end_station"], document["site"]["units"])
+        if not in_range(length, minimum, float("inf"), units=document["site"]["units"]):
             findings.append(_finding(meta,
                 f"{element['taper_type'].capitalize()} taper {element['element_id']} length {length} ft "
                 f"is below the printed California 12-ft-offset minimum {minimum} ft.",
@@ -198,8 +198,8 @@ def evaluate_sign_08(document):
     if not signs:
         return RuleResult(meta.rule_id, "not_applicable", True, reason="No sign elements are present.")
     try:
-        approach = _single_approach(document)
-    except _GeometryNotEvaluable as exc:
+        approach = single_approach(document)
+    except GeometryNotEvaluable as exc:
         return RuleResult(meta.rule_id, "not_evaluable", False, reason=str(exc))
     direction = document["typical_application"]["direction"]
     if direction == "BOTH":

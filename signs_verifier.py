@@ -5,7 +5,7 @@ therefore never turn the private numeric comparisons into production findings.
 """
 
 from rule_framework import Citation, Rule, RuleMetadata, RuleResult
-from rules.geometry import _abc_spacings, _advance_signs_by_distance, _advance_warning_extent_ft
+from rules.geometry import abc_spacings, advance_signs_by_distance, advance_warning_extent_ft
 
 
 _SOURCE = "CA MUTCD"
@@ -25,12 +25,12 @@ def _abc_comparisons(document, warning_sign_ids, recommended_ft):
     """
     return tuple((label, measured, recommended, sign_id)
                  for (label, measured, sign_id), recommended in
-                 zip(_abc_spacings(document, warning_sign_ids), recommended_ft))
+                 zip(abc_spacings(document, warning_sign_ids), recommended_ft))
 
 
 def _urban_distance_comparison(document, warning_sign_ids):
     """Nearest distance and 4S/8S endpoints in ft; S stays in declared mph."""
-    distance, sign_id = _advance_signs_by_distance(document, warning_sign_ids)[0]
+    distance, sign_id = advance_signs_by_distance(document, warning_sign_ids)[0]
     low, high = _speed_distance_range(document["typical_application"]["posted_speed_mph"], 4, 8)
     return distance, low, high, sign_id
 
@@ -45,7 +45,7 @@ def _open_highway_extent_comparison(document):
 
     Calling this calculation does not establish open-highway applicability.
     """
-    return _advance_warning_extent_ft(document), 1500
+    return advance_warning_extent_ft(document), 1500
 
 
 Z026 = RuleMetadata(

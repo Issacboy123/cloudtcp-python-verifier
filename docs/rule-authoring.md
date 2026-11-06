@@ -69,9 +69,9 @@ REGISTRY = RuleRegistry((Rule(META, evaluate),))
 ```
 
 Applicability must follow supplied facts. Missing or ambiguous applicability is
-`not_evaluable`, never `pass` or `not_applicable`. Geometry belongs in ordinary
-private helpers with documented units, direction, subject selection, and ambiguity
-handling; the framework imposes no geometry or sign-category inference. Do not
+`not_evaluable`, never `pass` or `not_applicable`. Shared geometry belongs in `rules/geometry.py`, whose internal interface
+includes `station_length_ft`, `single_approach`, and `GeometryNotEvaluable`.
+Document units, direction, subject selection, and ambiguity handling; the framework imposes no geometry or sign-category inference. Do not
 add context arguments or change the input schema to make a rule evaluable.
 
 The exact result matrix is:
@@ -130,7 +130,7 @@ Add evaluator tests for applicability, missing facts, every subject, boundaries,
 units, multiple findings, partial evaluation, citation fidelity, and unchanged
 input. Framework acceptance uses only synthetic evaluators in
 `tests/test_verifier.py`; ingestion validation tests live in `tests/test_ingestion.py`.
-Initial-rule and private geometry checks live in `tests/test_initial_rules.py`
+Initial-rule and shared geometry checks live in `tests/test_initial_rules.py`
 and `tests/test_geometry.py`. Geometry accepts explicitly selected warning IDs;
 the tests select W20-1 and exclude R4-7 and unknown codes. Geometry never chooses
 sign classes. Future executable sign rules must document a supported-code policy
@@ -177,3 +177,8 @@ no context flags. `main(argv)` returns the exit code; `python -m verifier` exits
 that code. Keep infrastructure exception conversion at this boundary so API
 callers retain the established exception behavior. Before completing a change,
 run the full test suite, exercise the CLI examples, and resolve review findings.
+
+The public report classes and `exit_code` remain importable from `verifier`;
+`reporting.py` implements report construction and formatting. CLI parsing and
+output recovery live in `verifier_cli.py`. Run `python -m ruff check .` alongside
+the acceptance suite before completing a change.

@@ -3,8 +3,8 @@ from copy import deepcopy
 import pytest
 
 from rules.geometry import (
-    _GeometryNotEvaluable, _abc_spacings, _advance_signs_by_distance,
-    _advance_warning_extent_ft, _single_approach, _station_length_ft,
+    GeometryNotEvaluable, abc_spacings, advance_signs_by_distance,
+    advance_warning_extent_ft, single_approach, station_length_ft,
 )
 from signs_verifier import (
     _FEDERAL_ABC_FT, _abc_comparisons, _open_highway_extent_comparison,
@@ -60,24 +60,24 @@ def test_abc_geometry_units_direction_and_endpoint_order(approach, meters, rever
         for zone in approach["zones"]:
             zone["start_station"], zone["end_station"] = zone["end_station"], zone["start_station"]
     before = deepcopy(approach)
-    geometry = _single_approach(approach)
+    geometry = single_approach(approach)
     assert geometry.station_direction == (-1 if reverse else 1)
     assert geometry.transition_reference == pytest.approx((-1000 if reverse else 1000) * (0.3048 if meters else 1))
-    signs = _advance_signs_by_distance(approach, selected(approach))
+    signs = advance_signs_by_distance(approach, selected(approach))
     assert [distance for distance, _ in signs] == pytest.approx([100, 300, 600, 1000])
     assert [sign_id for _, sign_id in signs] == ["W1", "W2", "W3", "W4"]
-    spacings = _abc_spacings(approach, selected(approach))
+    spacings = abc_spacings(approach, selected(approach))
     assert [gap for _, gap, _ in spacings] == pytest.approx([100, 200, 300])
     assert [label for label, _, _ in spacings] == ["A", "B", "C"]
-    assert _advance_warning_extent_ft(approach) == pytest.approx(900)
+    assert advance_warning_extent_ft(approach) == pytest.approx(900)
     assert approach == before
 
 
 @pytest.mark.parametrize("units,factor", [("feet", 1), ("meters", 0.3048)])
 def test_absolute_station_lengths(units, factor):
-    assert _station_length_ft(10 * factor, -40 * factor, units) == pytest.approx(50)
-    assert _station_length_ft(-40 * factor, 10 * factor, units) == pytest.approx(50)
-    assert _station_length_ft(0, 0, units) == 0
+    assert station_length_ft(10 * factor, -40 * factor, units) == pytest.approx(50)
+    assert station_length_ft(-40 * factor, 10 * factor, units) == pytest.approx(50)
+    assert station_length_ft(0, 0, units) == 0
 
 
 @pytest.mark.parametrize("mutation", [
@@ -101,25 +101,25 @@ def test_ambiguous_approaches_are_not_evaluable(approach, mutation):
         zones[1]["start_station"] = {"overlap": 850, "contained": 400, "identical": 0}[mutation]
         zones[1]["end_station"] = {"overlap": 1100, "contained": 500, "identical": 900}[mutation]
     for calculate in (
-        lambda: _single_approach(approach),
-        lambda: _advance_signs_by_distance(approach, selected(approach)),
-        lambda: _advance_warning_extent_ft(approach),
+        lambda: single_approach(approach),
+        lambda: advance_signs_by_distance(approach, selected(approach)),
+        lambda: advance_warning_extent_ft(approach),
     ):
-        with pytest.raises(_GeometryNotEvaluable):
+        with pytest.raises(GeometryNotEvaluable):
             calculate()
 
 
 def test_touching_zones_and_sign_at_transition(approach):
     approach["zones"][1]["start_station"] = 900
-    assert _single_approach(approach).transition_reference == 900
-    with pytest.raises(_GeometryNotEvaluable, match="strictly upstream"):
-        _abc_spacings(approach, selected(approach))
+    assert single_approach(approach).transition_reference == 900
+    with pytest.raises(GeometryNotEvaluable, match="strictly upstream"):
+        abc_spacings(approach, selected(approach))
 
 
 def test_warning_selection_excludes_regulatory_and_unknown(approach):
     # Put R4-7 inside the warning zone, even closer than the selected W20-1.
     approach["zones"][0]["end_station"] = 990
-    signs = _advance_signs_by_distance(approach, selected(approach))
+    signs = advance_signs_by_distance(approach, selected(approach))
     assert "R1" not in {sign_id for _, sign_id in signs}
     assert "U1" not in {sign_id for _, sign_id in signs}
     assert signs[0] == (100, "W1")
@@ -127,10 +127,10 @@ def test_warning_selection_excludes_regulatory_and_unknown(approach):
 
 def test_geometry_does_not_classify_codes(approach):
     ids = selected(approach)
-    before = _advance_signs_by_distance(approach, ids)
+    before = advance_signs_by_distance(approach, ids)
     for element in approach["elements"]:
         element["mutcd_code"] = "opaque-to-geometry"
-    assert _advance_signs_by_distance(approach, ids) == before
+    assert advance_signs_by_distance(approach, ids) == before
 
 
 @pytest.mark.parametrize("mutation", ["BOTH", "missing_face", "tied", "empty", "unknown_id", "non_sign"])
@@ -148,15 +148,15 @@ def test_missing_or_ambiguous_sign_facts(approach, mutation):
         ids.add("missing")
     else:
         approach["elements"][0]["type"] = "arrow_board"
-    with pytest.raises(_GeometryNotEvaluable):
-        _advance_signs_by_distance(approach, ids)
+    with pytest.raises(GeometryNotEvaluable):
+        advance_signs_by_distance(approach, ids)
 
 
 def test_opposite_facing_and_outside_signs_are_excluded(approach):
     approach["elements"][0]["face_direction"] = "SB"
     approach["elements"][3]["position"]["station"] = -1
-    assert _advance_signs_by_distance(approach, selected(approach)) == ((300, "W2"), (600, "W3"))
-    assert _abc_spacings(approach, selected(approach)) == (("A", 300, "W2"), ("B", 300, "W3"))
+    assert advance_signs_by_distance(approach, selected(approach)) == ((300, "W2"), (600, "W3"))
+    assert abc_spacings(approach, selected(approach)) == (("A", 300, "W2"), ("B", 300, "W3"))
 
 
 @pytest.mark.parametrize("category,recommended", [

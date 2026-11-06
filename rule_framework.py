@@ -4,7 +4,12 @@ from dataclasses import asdict, dataclass, field
 import json
 import math
 import re
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Literal, TypeAlias
+
+
+Classification: TypeAlias = Literal["STANDARD", "GUIDANCE", "OPTION", "SUPPORT"]
+ResultStatus: TypeAlias = Literal["pass", "fail", "not_applicable", "not_evaluable", "error"]
+Severity: TypeAlias = Literal["error", "warning"]
 
 
 @dataclass(frozen=True)
@@ -18,7 +23,7 @@ class Citation:
 class RuleMetadata:
     rule_id: str
     title: str
-    classification: str
+    classification: Classification
     citations: tuple[Citation, ...]
     limitations: tuple[str, ...] = ()
 
@@ -26,8 +31,8 @@ class RuleMetadata:
 @dataclass(frozen=True)
 class Finding:
     rule_id: str
-    severity: str
-    classification: str
+    severity: Severity
+    classification: Classification
     message: str
     element_ids: tuple[str, ...]
     zone_ids: tuple[str, ...]
@@ -52,7 +57,7 @@ class Diagnostic:
 @dataclass(frozen=True)
 class RuleResult:
     rule_id: str
-    status: str
+    status: ResultStatus
     complete: bool
     findings: tuple[Finding, ...] = ()
     reason: str | None = None
