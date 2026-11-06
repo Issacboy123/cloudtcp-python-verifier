@@ -1,6 +1,7 @@
 """Verification API and checkout CLI for implemented-rule coverage reports."""
 
 import argparse
+from collections import Counter
 from copy import deepcopy
 from contextlib import redirect_stdout
 from dataclasses import asdict, dataclass, replace
@@ -16,12 +17,17 @@ from rule_framework import (
 from signs_verifier import SIGN_RULES
 from rules.tapers import TAPER_RULE
 from rules.w1_registry import w1_rules
+from rules.full_registry import ALL_REGISTRY, automated_rule_ids, source_coverage
+from rules.source_catalog import SourceClause
 
 
-# Production default remains the five initial entries. TCP-W1-1 rules use W1_REGISTRY.
-DEFAULT_REGISTRY = RuleRegistry((*SIGN_RULES, TAPER_RULE))
+# Preserve the historical selections while making documented coverage the default.
+LEGACY_REGISTRY = RuleRegistry((*SIGN_RULES, TAPER_RULE))
 W1_REGISTRY = RuleRegistry(w1_rules())
-REPORT_VERSION = "1.0.0"
+DEFAULT_REGISTRY = ALL_REGISTRY
+# Minor report versions add fields; consumers should ignore unknown fields.
+# Input format_version is separate and remains 1.0.0.
+REPORT_VERSION = "1.2.0"
 COVERAGE_SCOPE = "implemented_rules_only"
 BASE_LIMITATIONS = (
     "Coverage includes only the registered Python rules; it is not comprehensive MUTCD compliance.",
@@ -40,6 +46,9 @@ class Report:
     errors: tuple[Diagnostic, ...]
     limitations: tuple[str, ...]
     coverage_scope: str = COVERAGE_SCOPE
+    registered_rule_ids: tuple[str, ...] = ()
+    automated_rule_ids: tuple[str, ...] = ()
+    source_coverage: tuple[SourceClause, ...] = ()
 
     def to_dict(self) -> dict:
         """Return detached JSON values, preserving array order and every finding."""
@@ -80,6 +89,13 @@ def _report(registry, *, input_errors=(), results=()):
     findings = tuple(sorted((f for result in results for f in result.findings), key=finding_key))
     errors = tuple(sorted((*input_errors, *(e for r in results for e in r.errors)), key=diagnostic_key))
     limitations = list(BASE_LIMITATIONS)
+    coverage = source_coverage(registry)
+    if registry.rules == ALL_REGISTRY.rules:
+        limitations.append(
+            "Source accounting includes both repository rule documents; missing input facts, "
+            "engineering review, and unavailable references remain explicit gaps. "
+            "Non-California sites receive the federal baseline, not other state-specific compliance."
+        )
     if not metadata:
         limitations.append("No rules are implemented in the current registry.")
     for rule in metadata:
@@ -93,6 +109,8 @@ def _report(registry, *, input_errors=(), results=()):
         evaluation_complete=not input_errors and not errors and all(r.complete for r in results),
         rule_metadata=metadata, rule_results=tuple(results), findings=findings,
         errors=errors, limitations=tuple(limitations),
+        registered_rule_ids=tuple(rule.rule_id for rule in metadata),
+        automated_rule_ids=automated_rule_ids(registry, coverage), source_coverage=coverage,
     )
 
 
@@ -208,7 +226,13 @@ def _text_report(report):
         f"Evaluation complete: {report.evaluation_complete}",
         f"Exit code: {report.exit_code}",
         f"Coverage: {report.coverage_scope}",
-        "Implemented rule IDs: " + (", ".join(report.implemented_rule_ids) or "(none)"),
+        "Registered rule IDs: " + (", ".join(report.registered_rule_ids) or "(none)"),
+        "Fully automated rule IDs: " + (", ".join(report.automated_rule_ids) or "(none)"),
+        "Source clause coverage: " + (", ".join(
+            f"{disposition}={count}" for disposition, count in
+            sorted(Counter(clause.disposition for clause in report.source_coverage).items())
+        ) or "(no catalog entries for this registry)"),
+        "implemented_rule_ids is deprecated; it lists registered checks, including unresolved checks.",
         "Rule results and citations:",
     ]
     results = {result.rule_id: result for result in report.rule_results}
@@ -216,6 +240,9 @@ def _text_report(report):
         result = results.get(meta.rule_id)
         status = f"{result.status}; complete={result.complete}" if result else "not executed"
         lines.append(f"  {meta.rule_id} [{meta.classification}]: {status}")
+        if result:
+            score = "unscored" if result.score is None else str(result.score)
+            lines.append(f"    Score: {score}")
         if result and result.reason:
             lines.append(f"    Reason: {result.reason}")
         for citation in meta.citations:
@@ -301,23 +328,62 @@ def _emit_report(report, output_format):
     return report.exit_code
 
 
+def _requested_registry_name(argv):
+    """Resolve an explicit selector even when another argument cannot parse.
+
+    The full parser still validates every argument. Honor the option terminator
+    and argparse's last-selector-wins behavior; an invalid final value leaves
+    error reports on the default registry.
+    """
+    name = "default"
+    for index, argument in enumerate(argv):
+        if argument == "--":
+            break
+        if argument == "--registry":
+            if index + 1 >= len(argv) or argv[index + 1].startswith("--"):
+                continue
+            value = argv[index + 1]
+        elif argument.startswith("--registry="):
+            value = argument.split("=", 1)[1]
+        else:
+            continue
+        name = value if value in ("default", "all", "legacy", "w1") else "default"
+    return name
+
+
+def _named_registry(name):
+    if name == "w1":
+        return W1_REGISTRY
+    if name == "legacy":
+        return LEGACY_REGISTRY
+    if name == "all":
+        return ALL_REGISTRY
+    return DEFAULT_REGISTRY
+
+
 def main(argv=None):
     """Run one local file. All infrastructure catches are confined to the CLI."""
     parser = _Parser(prog="python -m verifier", allow_abbrev=False,
-                     description="Verify one site JSON against implemented rules only.")
+                     description="Verify one site JSON and report documented rule coverage and gaps.")
     parser.add_argument("site", metavar="SITE.json")
     parser.add_argument("--format", choices=("json", "text"), default="json")
-    registry = DEFAULT_REGISTRY
+    parser.add_argument("--registry", choices=("default", "all", "legacy", "w1"), default="default",
+                        help="Full documented catalog (default/all), initial five rules (legacy), or W1.")
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    requested = _requested_registry_name(arguments)
+    registry = _named_registry(requested)
+    args = argparse.Namespace(registry=requested)
     results = []
     report = None
     input_valid = False
     try:
-        args = parser.parse_args(argv)
+        parser.parse_args(arguments, namespace=args)
     except _ArgumentError as exc:
         report = _report(registry, input_errors=(Diagnostic("cli_arguments", "", str(exc)),))
         return _emit_report(report, "json")
     except Exception as exc:
         return _emit_report(_operational_report(exc, registry, (), False), "json")
+    registry = _named_registry(args.registry)
     # Trusted evaluator prints and incidental logs must not corrupt JSON stdout.
     with redirect_stdout(sys.stderr):
         try:

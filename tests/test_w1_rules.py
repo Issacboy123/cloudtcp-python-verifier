@@ -14,7 +14,11 @@ from verifier import W1_REGISTRY, verify_document, verify_file
 ROOT = Path(__file__).resolve().parents[1]
 PLANS = ROOT / "examples" / "w1"
 W1_DOC = ROOT / "TCP-W1-1 Rules.md"
-EVALUABLE_IDS = tuple(EVALUATORS)
+# The historical example labels describe author intent, not proof that the
+# schema contains every fact now required by the evaluator.
+SCORED_COMPLIANT_IDS = ("TAPER-01", "TAPER-02", "CHAN-01", "BUFFER-01", "ARROW-03")
+SCORED_VIOLATING_IDS = ("TAPER-01", "TAPER-02", "BUFFER-01", "SIGN-21", "ARROW-03")
+INCOMPLETE_EXAMPLE_IDS = ("TAPER-03", "FLAG-02", "SIGN-11", "SIGN-20", "SIGN-31", "ARROW-02")
 ALL_IDS = tuple(load_w1_sections())
 
 
@@ -50,8 +54,8 @@ def test_w1_citations_match_source_document():
         assert citation.mutcd_reference == source
 
 
-@pytest.mark.parametrize("rule_id", EVALUABLE_IDS)
-def test_evaluable_compliant_plan_passes_with_score_one(rule_id):
+@pytest.mark.parametrize("rule_id", SCORED_COMPLIANT_IDS)
+def test_supported_compliant_plan_passes_with_score_one(rule_id):
     plan = load_plan(rule_id, "compliant")
     before = deepcopy(plan)
     result = result_for(rule_id, plan)
@@ -61,8 +65,8 @@ def test_evaluable_compliant_plan_passes_with_score_one(rule_id):
     assert not result.findings
 
 
-@pytest.mark.parametrize("rule_id", EVALUABLE_IDS)
-def test_evaluable_violating_plan_scores_below_one(rule_id):
+@pytest.mark.parametrize("rule_id", SCORED_VIOLATING_IDS)
+def test_supported_violating_plan_scores_below_one(rule_id):
     plan = load_plan(rule_id, "violating")
     result = result_for(rule_id, plan)
     assert result.score is not None and 0 <= result.score < 1
@@ -82,7 +86,15 @@ def test_stub_plans_are_not_evaluable_with_null_score(rule_id):
         assert result.score is None and result.reason
 
 
-def test_cli_plan_files_round_trip(tmp_path):
+@pytest.mark.parametrize("rule_id", INCOMPLETE_EXAMPLE_IDS)
+@pytest.mark.parametrize("kind", ("compliant", "violating"))
+def test_examples_missing_required_facts_remain_incomplete(rule_id, kind):
+    result = result_for(rule_id, load_plan(rule_id, kind))
+    assert result.status == "not_evaluable" and not result.complete
+    assert result.score is None and not result.findings and result.reason
+
+
+def test_file_plan_round_trip():
     path = PLANS / "TAPER-01" / "violating.json"
     report = verify_file(path, registry=W1_REGISTRY)
     assert report.input_valid

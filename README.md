@@ -2,8 +2,10 @@
 
 Python 3.11+ checkout-based ingestion, verification API and single-file CLI. Site validation
 uses the unchanged local Draft 2020-12 schema, then checks IDs, references, and
-lane counts. The production registry contains exactly five initial GUIDANCE
-entries; four sign entries are unevaluable and one downstream-taper check runs.
+lane counts. The default registry accounts for both supplied rule documents,
+shares checks for overlapping provisions, and evaluates the clauses supported by
+input schema 1.0.0. Other clauses identify missing facts, engineering review,
+unavailable sources, or informational interpretation explicitly.
 This tool reads local site JSON. It does not parse DGN/CAD files or establish
 comprehensive MUTCD compliance. Predictions and observations are validated data,
 not automatically compliance evidence.
@@ -56,6 +58,12 @@ python -m verifier examples/taper-125ft.json --format text
 # exit 1: findings, citations, incomplete checks and implemented-only coverage
 python -m verifier examples/invalid.json
 # exit 2: valid JSON with required site fields missing; no rules execute
+python -m verifier examples/taper-75ft.json --registry all
+# explicitly select the full catalog (also the default)
+python -m verifier examples/taper-75ft.json --registry w1
+# select the historical 76-entry W1 registry
+python -m verifier examples/taper-75ft.json --registry legacy
+# retain the original five-entry behavior
 python -m verifier --help
 ```
 
@@ -151,32 +159,81 @@ structured report goes to stderr and the process exits 4.
 not that the input was proved invalid. Python API infrastructure exceptions still
 propagate to callers, including a copy failure after earlier rules ran.
 
-Reports provide version `1.0.0`, `input_valid`, `implemented_rule_ids`, metadata
-and citations, `evaluation_complete`, every rule result and finding, structured
-errors, and coverage limitations. Coverage is explicitly limited to registered
-rules, never comprehensive MUTCD compliance. The default registry returns results
-in this order: `mutcd.Z-026`, `mutcd.Z-020`, `mutcd.Z-022`, `mutcd.Z-022-B`,
-`mutcd.T-013`.
+Reports provide version `1.2.0`, `input_valid`, metadata and citations,
+`evaluation_complete`, every rule result and finding, structured errors, and
+coverage limitations. `registered_rule_ids` lists selected registry entries;
+`automated_rule_ids` identifies checks whose mapped clauses are all classified
+as automated; partial checks remain visible in `source_coverage`. The deprecated
+`implemented_rule_ids` remains an alias for the registered list for compatibility;
+it must not be interpreted as a count of fully implemented checks.
+`source_coverage` accounts for the source entries and distinguishes executable
+coverage from missing input facts, review requirements, source dependencies, and
+informational provisions. Source accounting does not establish plan compliance. Each clause records its
+source heading and citation, classification, canonical check ID when applicable,
+and limitations. Dispositions are `automated`, `partial`, `input_blocked`,
+`review_required`, `source_blocked`, and `informational`. They describe available
+coverage, while rule results describe what happened for the particular input.
 
-TCP-W1-1 Part 6 extraction rules (SIGN/TAPER/CHAN/ARROW/FLAG/…) live in
-`W1_REGISTRY` (`from verifier import W1_REGISTRY`) and cite
-[TCP-W1-1 Rules.md](TCP-W1-1%20Rules.md). Pass `registry=W1_REGISTRY` to
-`verify_document` / `verify_file`. Each result may include a graded `score` in
-`[0, 1]` when the rule evaluates; stubs that lack schema facts return
-`not_evaluable` with `score=null`. Compliant and violating plans for every W1
-rule are under `examples/w1/<RULE-ID>/`.
+`ALL_REGISTRY` is the default (`DEFAULT_REGISTRY` is its alias). Select it with
+`--registry all` or `--registry default`, or pass `registry=ALL_REGISTRY` to the
+Python API. The catalog covers 381 headings in
+[TCP Rules Document.md](TCP%20Rules%20Document.md) and 76 headings in
+[TCP-W1-1 Rules.md](TCP-W1-1%20Rules.md). These 457 source entries overlap;
+they are not 457 independent requirements. Shared checks retain source traceability
+and avoid duplicate findings. Mixed headings retain the classification of each
+substantive clause rather than downgrading mandatory clauses to guidance.
 
-The four sign provisions always report `not_evaluable`: schema 1.0.0 lacks
+For `site.state == "CA"`, explicit California replacements and supplements apply
+to the federal baseline. Other states receive federal coverage only; no other
+state's supplements are supplied. State-highway ownership, freeway status,
+application numbers, and exceptions are not inferred from names or free text.
+Missing facts leave affected checks incomplete. Input schema 1.0.0 is unchanged;
+no evidence file, context argument, external-source retrieval, or approval workflow
+is added. Unavailable standards and unresolved extraction errors remain explicit
+limitations.
+
+`LEGACY_REGISTRY` (`--registry legacy`) preserves the original five entries, in
+order: `mutcd.Z-026`, `mutcd.Z-020`, `mutcd.Z-022`, `mutcd.Z-022-B`, and
+`mutcd.T-013`. Four sign entries remain unevaluable, and the downstream-taper
+length check runs.
+
+`W1_REGISTRY` (`--registry w1`) preserves the historical 76-entry extraction.
+It contains 64 explicit placeholders and 12 specialized handlers; some handlers
+can establish only missing facts or inapplicability. See
+[W1 coverage and interpretation](docs/w1-coverage.md) for their supported behavior.
+Registry selection chooses checks; it does not supply missing facts.
+
+Each result includes a nullable graded `score` in `[0, 1]`. `not_applicable`,
+`not_evaluable`, and `error` results have `score=null`; an evaluated result may
+also be unscored. Read status, completeness, findings, and limitations alongside
+the score. Incomplete failures retain known findings. A custom evaluator may
+score its evaluated subjects; W1 leaves partial rule scores null and retains
+finding-level scores. Such scores do not describe unevaluated subjects. An OPTION such
+as BUFFER-01 can pass with a score below one without producing a violation.
+Text reports display rule-level scores as well as status and completeness.
+
+Report version 1.1.0 added rule-result scores; 1.2.0 adds source-coverage fields. Consumers
+should tolerate additive fields within a major report version; the input schema
+remains version 1.0.0. Scores are local grading conventions, not a regulatory
+compliance percentage.
+
+Example plans are under `examples/w1/<RULE-ID>/compliant.json` and
+`violating.json`. Those historical names describe the intended scenarios; they
+do not guarantee a pass or failure when the input lacks required facts. W1
+metadata is defined explicitly in Python, with source citations checked against
+the extracted document in tests. The Markdown document is not runtime input.
+
+In the legacy registry, the four sign provisions always report `not_evaluable`: schema 1.0.0 lacks
 roadway/applicability classifications. Names, highway numbers, speeds and free
 text cannot supply those facts. Z-022 also retains the unresolved meaning of
 "first warning sign"; Z-022-B's 1,500 ft recommendation concerns open-highway
-conditions rather than every rural highway. CA-005 is an unimplemented California
-replacement for Z-026, including unresolved speed-band/footnote dependencies;
-the federal spacing table is not applied to California.
+conditions rather than every rural highway. CA-005 is the California replacement for Z-026; its roadway-category and
+speed-band/footnote dependencies remain explicit. The federal spacing table is
+not applied to California as a substitute.
 
 | Registered sign entry | Initial coverage and missing facts |
 |---|---|
-| `mutcd.Z-026` (former SIGN-01) | Federal A/B/C advisory spacing; roadway category and agency/owner urban speed classification absent. California replacement CA-005 is unimplemented, with interpolation and flagged footnote issues unresolved. |
+| `mutcd.Z-026` (former SIGN-01) | Federal A/B/C advisory spacing; roadway category and agency/owner urban speed classification absent. California replacement CA-005 requires roadway facts, with interpolation and flagged footnote issues unresolved. |
 | `mutcd.Z-020` (former SIGN-02) | Urban nearest warning sign 4S–8S recommendation; urban-street applicability absent. |
 | `mutcd.Z-022` (former SIGN-03 distance) | Rural 8S–12S recommendation; rural applicability absent and “first warning sign” endpoint unresolved between first encountered upstream and nearest sign. |
 | `mutcd.Z-022-B` (former SIGN-03 extent) | Open-highway advance-warning extent, nominally 1,500 ft; open-highway applicability absent. This is not a universal rural minimum. |
@@ -192,9 +249,10 @@ for meter conversion roundoff; station-origin uncertainty does not widen the
 range. Input endpoint errors larger than that allowance remain deviations.
 Findings do not assess engineering justification or field adjustment.
 
-With the default registry, valid input remains `evaluation_complete=False`
+With the legacy registry, valid input remains `evaluation_complete=False`
 because of the sign coverage gaps. Its exit code is 1 when a taper warning is
-present, otherwise 3. An explicitly empty custom registry still reports empty
+present, otherwise 3. The full registry also retains every unresolved applicable
+check; complete source accounting never turns missing evidence into a pass. An explicitly empty custom registry still reports empty
 coverage and no pending checks.
 
 Interpret each result using both `status` and `complete`:
@@ -246,8 +304,8 @@ operational errors without changing API exceptions.
 | 0 | All implemented checks resolved without findings (`--help` also exits 0). |
 
 Higher-precedence exits retain known findings and gaps in the report. Exit 0
-addresses implemented coverage only. The default sign gaps mean valid inputs
-currently exit 3 or 1 unless an execution error requires exit 4.
+addresses implemented coverage only. Unresolved requirements normally leave full-registry inputs at exit 3 or 1
+unless an execution error requires exit 4.
 
 To author a rule, establish applicability from the existing input, copy source
 citations into metadata, implement a single-dictionary evaluator with private
@@ -256,5 +314,5 @@ boundaries, units, findings, missing facts and isolation. The
 [rule-authoring guide](docs/rule-authoring.md) supplies the executable synthetic
 template and full contracts. No schema extensions or additional caller facts
 are accepted. Run the complete suite, exercise the CLI examples, and resolve
-review findings before completing a change. Adding production rules requires a separately
-authorized scope; these examples do not replace the initial registry.
+review findings before completing a change. Keep the source catalog and its
+coverage dispositions synchronized with any production rule changes.

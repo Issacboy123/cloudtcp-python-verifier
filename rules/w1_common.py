@@ -1,36 +1,25 @@
 """Shared TCP-W1-1 metadata loading and result helpers."""
 
-from functools import lru_cache
-from pathlib import Path
-import re
+from types import MappingProxyType
 
 from rule_framework import Citation, Finding, Rule, RuleMetadata, RuleResult
+from rules.w1_metadata import W1_SECTIONS
 
 SOURCE = "TCP-W1-1 Rules.md"
-_ROOT = Path(__file__).resolve().parents[1]
-_DOC = _ROOT / SOURCE
+_SECTIONS = MappingProxyType(dict(W1_SECTIONS))
 
 
-@lru_cache(maxsize=1)
 def load_w1_sections():
-    """Parse TCP-W1-1 Rules.md into {rule_id: (classification, title, citation)}."""
-    text = _DOC.read_text(encoding="utf-8")
-    pattern = re.compile(
-        r"^### ([A-Z0-9-]+) — (STANDARD|GUIDANCE|OPTION|SUPPORT) — (.+)\n"
-        r"\n"
-        r"([\s\S]*?)"
-        r"\*\*Citation:\*\* (.+)",
-        re.MULTILINE,
-    )
-    sections = {}
-    for match in pattern.finditer(text):
-        rule_id, classification, title, _body, citation = match.groups()
-        sections[rule_id] = (classification, title.strip(), citation.strip())
-    return sections
+    """Return detached citation metadata in the extracted document's order.
+
+    The reference Markdown is not opened at runtime. Returning a fresh mapping
+    prevents callers from changing metadata used by later registries.
+    """
+    return dict(_SECTIONS)
 
 
 def w1_metadata(rule_id, *, limitations=()):
-    classification, title, mutcd = load_w1_sections()[rule_id]
+    classification, title, mutcd = _SECTIONS[rule_id]
     heading = f"{rule_id} — {classification} — {title}"
     return RuleMetadata(
         f"mutcd.{rule_id}",

@@ -4,8 +4,9 @@ Rules are ordinary Python functions accepting one validated site dictionary.
 Register `Rule(metadata, evaluator)` entries explicitly in `RuleRegistry` order.
 Pass the registry using `verify_document(site, registry=registry)` or
 `verify_file(path, registry=registry)`. This selects executable rules, not caller
-context. The default production registry contains the five initial
-GUIDANCE entries documented in the README. There is no rule discovery, DSL,
+context. The default production registry is `ALL_REGISTRY`, accounting for both
+supplied rule documents. `LEGACY_REGISTRY` preserves the five initial GUIDANCE
+entries, and `W1_REGISTRY` preserves the historical W1 registry. There is no rule discovery, DSL,
 or plugin protocol.
 
 Use a unique namespaced ID such as `agency.rule-name` or `mutcd.Z-026`.
@@ -89,6 +90,15 @@ requires valid input, no execution errors, and complete results for every rule.
 The engine validates the matrix; the author must establish the factual meaning
 of pass, inapplicability, and missing facts in evaluator logic and tests.
 
+`RuleResult.score` is optional and must be a finite number in `[0, 1]`, excluding
+booleans. `not_applicable`, `not_evaluable`, and `error` results must leave it
+`None`. A partial `fail` may retain a score for evaluated subjects, but must also
+set `complete=False` and explain the missing subjects. Do not discard known
+findings when a later subject cannot be evaluated. An OPTION may receive a low
+score without producing findings; a score never replaces status or completeness.
+Report version 1.1.0 added this nullable field; 1.2.0 adds coverage reporting.
+Input schema version remains 1.0.0.
+
 Use `STANDARD` with severity `error`, or `GUIDANCE` with severity `warning`.
 `OPTION` and `SUPPORT` may return no-finding results but cannot independently
 produce violations. Findings must match metadata ID, classification, and the
@@ -122,12 +132,41 @@ entries remain unevaluable; numeric helpers are not proof of applicability.
 Adding an evaluator or a new source citation requires registration and tests,
 with no changes to engine execution or reporting.
 
+Full-catalog authoring must account for each source heading and its substantive
+clauses, including exceptions and mixed classifications. Reuse an existing check
+when both documents express the same requirement and retain both source links;
+do not emit duplicate findings for the same requirement and subject. A mandatory
+subclause keeps STANDARD/error treatment even under a GUIDANCE heading.
+
+Separate executable checks from source accounting. Every unsupported clause
+needs a specific explanation identifying missing schema facts, engineering review,
+or an unavailable/ambiguous source. Definitions and SUPPORT provisions inform
+interpretation and must not become invented violations. Unknown applicability
+remains incomplete; absent optional evidence does not prove inapplicability.
+
+California selection uses `site.state == "CA"` and explicit replacement or
+supplement relationships. Preserve printed table values, formula branch gaps,
+source exceptions, and uncertain classifications. Do not invent interpolation,
+rounding, approximate tolerances, device associations, or roadway classifications.
+The current input schema cannot express every documented requirement, and this
+work does not add fields or parse free text as compliance evidence.
+
+Report 1.2.0 exposes `registered_rule_ids`, `automated_rule_ids`, and
+`source_coverage`. Preserve `implemented_rule_ids` as the deprecated registered-list
+alias for existing consumers. Neither registration counts nor source-accounting
+counts are compliance percentages. Test exact source inventory and citations,
+applicability, jurisdiction, overlap suppression, mixed-strength clauses, and the
+specific missing-fact/source/review explanation for every unsupported family.
+
 CLI integration acceptance lives in `tests/test_cli.py`. It runs child processes
 with synthetic registries to check all exit branches, partial findings, rule and
 operational failures alongside retained findings/gaps, invalid-input short
 circuiting, and checkout use from another working directory. The production CLI
-accepts only one site file and the output format; it has no rule selection or
-context flags. `main(argv)` returns the exit code; `python -m verifier` exits with
+accepts one site file, `--format json|text`, and
+`--registry default|all|legacy|w1`. `default` and `all` select the full catalog;
+`legacy` selects the original five entries. Registry selection chooses
+Python rules and does not supply missing roadway or geometry facts. There are
+no context flags. `main(argv)` returns the exit code; `python -m verifier` exits with
 that code. Keep infrastructure exception conversion at this boundary so API
 callers retain the established exception behavior. Before completing a change,
 run the full test suite, exercise the CLI examples, and resolve review findings.

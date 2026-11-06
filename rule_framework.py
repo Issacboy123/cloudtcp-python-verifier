@@ -149,9 +149,11 @@ def validate_result(result, metadata):
     _require(type(result.errors) is tuple, "Errors must be a tuple.")
     _require(result.reason is None or _text(result.reason), "Invalid reason.")
     if result.score is not None:
-        _require(type(result.score) in (int, float) and type(result.score) is not bool
-                 and math.isfinite(result.score) and 0 <= result.score <= 1,
+        _require(type(result.score) in (int, float)
+                 and 0 <= result.score <= 1 and math.isfinite(result.score),
                  "score must be a finite number in [0, 1].")
+        _require(result.status in ("pass", "fail"),
+                 "Only pass or fail results may have a score.")
     if result.status == "fail":
         _require(bool(result.findings), "fail requires findings.")
     else:

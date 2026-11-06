@@ -12,7 +12,7 @@ import pytest
 import signs_verifier
 from rule_framework import RuleRegistry
 from rules.tapers import TAPER_RULE
-from verifier import DEFAULT_REGISTRY, verify_document, verify_file
+from verifier import LEGACY_REGISTRY, verify_document, verify_file
 
 
 RULE_IDS = ("mutcd.Z-026", "mutcd.Z-020", "mutcd.Z-022", "mutcd.Z-022-B", "mutcd.T-013")
@@ -42,7 +42,7 @@ def site(minimal):
 
 
 def t013(site):
-    report = verify_document(site)
+    report = verify_document(site, registry=LEGACY_REGISTRY)
     assert report.input_valid and not report.errors
     matches = [r for r in report.rule_results if r.rule_id == "mutcd.T-013"]
     assert len(matches) == 1
@@ -52,8 +52,8 @@ def t013(site):
 def test_imports_registry_order_and_guidance_only():
     for name in ("ingestion", "rule_framework", "verifier", "signs_verifier", "rules", "rules.geometry", "rules.tapers"):
         importlib.import_module(name)
-    assert tuple(rule.metadata.rule_id for rule in DEFAULT_REGISTRY.rules) == RULE_IDS
-    assert {rule.metadata.classification for rule in DEFAULT_REGISTRY.rules} == {"GUIDANCE"}
+    assert tuple(rule.metadata.rule_id for rule in LEGACY_REGISTRY.rules) == RULE_IDS
+    assert {rule.metadata.classification for rule in LEGACY_REGISTRY.rules} == {"GUIDANCE"}
 
 
 @pytest.mark.parametrize("name,speed,state", [
@@ -64,7 +64,7 @@ def test_imports_registry_order_and_guidance_only():
 def test_sign_rules_missing_roadway_facts_never_inferred(site, name, speed, state, direction):
     site["site"].update(name=name, road_name=name, highway_number="I-5", state=state, location_description=name)
     site["typical_application"].update(direction=direction, posted_speed_mph=speed, description=name)
-    report = verify_document(site)
+    report = verify_document(site, registry=LEGACY_REGISTRY)
     assert report.implemented_rule_ids == RULE_IDS
     assert [r.status for r in report.rule_results] == ["not_evaluable"] * 4 + ["not_applicable"]
     assert all(not result.complete and result.reason for result in report.rule_results[:4])
@@ -178,7 +178,7 @@ def test_all_tapers_one_finding_per_deviation_and_separate_ids(site):
         taper(1000, element_id="shift", taper_type="shift"),
         taper(1, element_id="shoulder", taper_type="shoulder"),
     ]
-    report = verify_document(site)
+    report = verify_document(site, registry=LEGACY_REGISTRY)
     result = report.rule_results[-1]
     assert result.status == "fail" and result.complete
     assert len(report.findings) == 2 and report.exit_code == 1
@@ -213,7 +213,7 @@ def test_explicit_units_unchanged_and_longitudinal_only(site):
 def test_citations_match_exact_source_headings_and_text():
     root = Path(__file__).resolve().parents[1]
     text = (root / "TCP Rules Document.md").read_text(encoding="utf-8")
-    for rule in DEFAULT_REGISTRY.rules:
+    for rule in LEGACY_REGISTRY.rules:
         for citation in rule.metadata.citations:
             assert citation.source_document == "CA MUTCD"
             heading = f"### {citation.local_reference}\n"
@@ -224,26 +224,26 @@ def test_citations_match_exact_source_headings_and_text():
         assert rule.metadata.title in rule.metadata.citations[0].local_reference
     ca_section = text.split("### CA-005 — GUIDANCE — California replacement — advance warning sign spacing\n", 1)[1].split("\n### ", 1)[0]
     ca_citation = re.search(r"\*\*Citation:\*\* (.+)", ca_section).group(1).replace("\\.", ".")
-    assert ca_citation in " ".join(DEFAULT_REGISTRY.rules[0].metadata.limitations)
+    assert ca_citation in " ".join(LEGACY_REGISTRY.rules[0].metadata.limitations)
 
 
 def test_no_legacy_context_api_or_public_selection(site):
     assert not any(hasattr(signs_verifier, name) for name in ("check_sign_01", "check_sign_02", "check_sign_03"))
     for api in (verify_document, verify_file):
         assert list(inspect.signature(api).parameters) == ["document" if api is verify_document else "path", "registry"]
-    for rule in DEFAULT_REGISTRY.rules:
+    for rule in LEGACY_REGISTRY.rules:
         assert list(inspect.signature(rule.evaluator).parameters) == ["document"]
     with pytest.raises(TypeError):
         verify_document(site, context={"road_category": "rural"})
 
 
-def test_default_file_and_document_interfaces_deterministic(site, tmp_path):
+def test_legacy_file_and_document_interfaces_deterministic(site, tmp_path):
     site["elements"] = [taper(49)]
     path = tmp_path / "site.json"
     path.write_text(json.dumps(site), encoding="utf-8")
-    first = verify_document(site)
-    assert first == verify_file(path)
-    assert first.to_json() == verify_document(site).to_json()
+    first = verify_document(site, registry=LEGACY_REGISTRY)
+    assert first == verify_file(path, registry=LEGACY_REGISTRY)
+    assert first.to_json() == verify_document(site, registry=LEGACY_REGISTRY).to_json()
     assert json.loads(first.to_json())["implemented_rule_ids"] == list(RULE_IDS)
     # An explicit test registry can resolve just this implemented provision.
     assert verify_document(site, registry=RuleRegistry((TAPER_RULE,))).evaluation_complete
