@@ -33,7 +33,7 @@ def test_work_zone_separation_does_not_prove_stopping_sight_distance(station, sp
     document["elements"][0]["position"]["station"] = station
     document["typical_application"]["posted_speed_mph"] = speed
     _, check = result(document, "FLAG-02")
-    assert check.status == "not_evaluable" and check.score is None
+    assert check.status == "not_evaluable" and check.score == 0
     assert "sight distance" in check.reason
 
 
@@ -52,7 +52,7 @@ def test_lane_counts_do_not_supply_missing_road_classification(rule_id):
     document["typical_application"].update(type="lane_closure", lanes_total=3, lanes_closed=1)
     document["elements"] = []
     _, check = result(document, rule_id)
-    assert check.status == "not_evaluable" and check.score is None
+    assert check.status == "not_evaluable" and check.score == 0
 
 
 @pytest.mark.parametrize("size", ("30x30", "36x36", "48x48", "60x60", "unparsed"))
@@ -75,7 +75,7 @@ def test_unknown_taper_does_not_erase_known_failure(rule_id, taper_type, unknown
     document["elements"] = [unknown, short] if unknown_first else [short, unknown]
     report, check = result(document, rule_id)
     assert check.status == "fail" and not check.complete
-    assert check.score is None and "unknown-width" in check.reason
+    assert check.score == 0 and "unknown-width" in check.reason
     assert len(check.findings) == 1
     assert check.findings[0].element_ids == (short["element_id"],)
     assert report.exit_code == 1 and not report.evaluation_complete
@@ -98,7 +98,7 @@ def test_fractional_speed_is_not_truncated_to_a_table_key(speed):
     document = plan("BUFFER-01")
     document["typical_application"]["posted_speed_mph"] = speed
     _, check = result(document, "BUFFER-01")
-    assert check.status == "not_evaluable" and check.score is None
+    assert check.status == "not_evaluable" and check.score == 0
     assert str(speed) in check.reason
 
 
@@ -154,7 +154,7 @@ def test_upstream_warning_outside_modeled_approach_is_incomplete():
     document = warning_plan()
     document["elements"][0]["position"]["station"] = -1
     _, check = result(document, "SIGN-21")
-    assert check.status == "not_evaluable" and check.score is None
+    assert check.status == "not_evaluable" and check.score == 0
 
 
 def test_opposite_facing_warning_does_not_serve_flagger():
@@ -174,7 +174,7 @@ def test_warning_unknown_direction_is_incomplete(missing):
     else:
         document["typical_application"]["direction"] = "BOTH"
     _, check = result(document, "SIGN-21")
-    assert check.status == "not_evaluable" and check.score is None
+    assert check.status == "not_evaluable" and check.score == 0
 
 
 def test_multiple_flaggers_retain_known_missing_warning_with_unknown_direction():
@@ -186,7 +186,7 @@ def test_multiple_flaggers_retain_known_missing_warning_with_unknown_direction()
     document["elements"].append(unknown)
     _, check = result(document, "SIGN-21")
     assert check.status == "fail" and not check.complete and len(check.findings) == 1
-    assert check.score is None and "unknown-flagger" in check.reason
+    assert check.score == 0 and "unknown-flagger" in check.reason
 
 
 def test_two_lanes_do_not_establish_a_two_way_road():
@@ -203,7 +203,7 @@ def test_approximate_taper_spacing_does_not_invent_a_pass_fail_band(spacing):
         if element["type"] == "device_line":
             element["spacing_ft"] = spacing
     _, check = result(document, "TAPER-03")
-    assert check.status == "not_evaluable" and check.score is None
+    assert check.status == "not_evaluable" and check.score == 0
 
 
 def test_parallel_station_overlap_does_not_prove_taper_association():

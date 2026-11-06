@@ -27,11 +27,24 @@ W1_REGISTRY = RuleRegistry(w1_rules())
 DEFAULT_REGISTRY = ALL_REGISTRY
 # Minor report versions add fields; consumers should ignore unknown fields.
 # Input format_version is separate and remains 1.0.0.
-REPORT_VERSION = "1.2.0"
+REPORT_VERSION = "2.0.0"
 COVERAGE_SCOPE = "implemented_rules_only"
 BASE_LIMITATIONS = (
     "Coverage includes only the registered Python rules; it is not comprehensive MUTCD compliance.",
 )
+
+
+@dataclass(frozen=True)
+class ReportRuleResult:
+    """Reported outcome with a binary score; evaluator RuleResult stays unchanged."""
+
+    rule_id: str
+    status: str
+    complete: bool
+    score: int
+    findings: tuple[Finding, ...] = ()
+    reason: str | None = None
+    errors: tuple[Diagnostic, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -41,7 +54,7 @@ class Report:
     implemented_rule_ids: tuple[str, ...]
     evaluation_complete: bool
     rule_metadata: tuple[RuleMetadata, ...]
-    rule_results: tuple[RuleResult, ...]
+    rule_results: tuple[ReportRuleResult, ...]
     findings: tuple[Finding, ...]
     errors: tuple[Diagnostic, ...]
     limitations: tuple[str, ...]
@@ -84,7 +97,24 @@ def exit_code(report: Report | None = None, *, operational_error: bool = False) 
     return 0
 
 
+def _report_result(result: RuleResult) -> ReportRuleResult:
+    """Project a validated evaluator outcome without mutating its measurements."""
+    findings = tuple(sorted((
+        replace(finding, values={
+            key: 0 if key == "score" else value
+            for key, value in finding.values.items()
+        })
+        for finding in result.findings
+    ), key=finding_key))
+    return ReportRuleResult(
+        rule_id=result.rule_id, status=result.status, complete=result.complete,
+        score=1 if result.status == "pass" else 0, findings=findings,
+        reason=result.reason, errors=result.errors,
+    )
+
+
 def _report(registry, *, input_errors=(), results=()):
+    results = tuple(_report_result(result) for result in results)
     metadata = tuple(rule.metadata for rule in registry.rules)
     findings = tuple(sorted((f for result in results for f in result.findings), key=finding_key))
     errors = tuple(sorted((*input_errors, *(e for r in results for e in r.errors)), key=diagnostic_key))
@@ -241,8 +271,7 @@ def _text_report(report):
         status = f"{result.status}; complete={result.complete}" if result else "not executed"
         lines.append(f"  {meta.rule_id} [{meta.classification}]: {status}")
         if result:
-            score = "unscored" if result.score is None else str(result.score)
-            lines.append(f"    Score: {score}")
+            lines.append(f"    Score: {result.score}")
         if result and result.reason:
             lines.append(f"    Reason: {result.reason}")
         for citation in meta.citations:

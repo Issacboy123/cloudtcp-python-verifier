@@ -159,7 +159,7 @@ structured report goes to stderr and the process exits 4.
 not that the input was proved invalid. Python API infrastructure exceptions still
 propagate to callers, including a copy failure after earlier rules ran.
 
-Reports provide version `1.2.0`, `input_valid`, metadata and citations,
+Reports provide version `2.0.0`, `input_valid`, metadata and citations,
 `evaluation_complete`, every rule result and finding, structured errors, and
 coverage limitations. `registered_rule_ids` lists selected registry entries;
 `automated_rule_ids` identifies checks whose mapped clauses are all classified
@@ -203,19 +203,24 @@ can establish only missing facts or inapplicability. See
 [W1 coverage and interpretation](docs/w1-coverage.md) for their supported behavior.
 Registry selection chooses checks; it does not supply missing facts.
 
-Each result includes a nullable graded `score` in `[0, 1]`. `not_applicable`,
-`not_evaluable`, and `error` results have `score=null`; an evaluated result may
-also be unscored. Read status, completeness, findings, and limitations alongside
-the score. Incomplete failures retain known findings. A custom evaluator may
-score its evaluated subjects; W1 leaves partial rule scores null and retains
-finding-level scores. Such scores do not describe unevaluated subjects. An OPTION such
-as BUFFER-01 can pass with a score below one without producing a violation.
-Text reports display rule-level scores as well as status and completeness.
+Each report result retains its status and includes a required integer `score`:
+`pass` receives `1`; `fail`, `not_applicable`, `not_evaluable`, and `error` receive
+`0`. Incomplete failures retain known findings, `complete=False`, and their
+reason. A zero score alone does not distinguish a violation from missing facts,
+inapplicability, or an execution error; read status, completeness, findings, and
+limitations alongside it. An OPTION such as BUFFER-01 that passes receives `1`,
+even when its internal evaluator assigns a fractional grade. Existing scores in
+finding measurements become integer `0`; other measurements and citations are
+preserved, and findings without a score do not gain one. Text reports display
+rule scores alongside status and completeness.
 
-Report version 1.1.0 added rule-result scores; 1.2.0 adds source-coverage fields. Consumers
-should tolerate additive fields within a major report version; the input schema
-remains version 1.0.0. Scores are local grading conventions, not a regulatory
-compliance percentage.
+Report version 2.0.0 replaces fractional/nullable reported scores with this binary
+contract. `Report.rule_results` contains `ReportRuleResult` objects; direct
+evaluator `RuleResult` objects retain their existing optional graded scores and
+validation contract. Version 1.1.0 introduced rule-result scores and 1.2.0 added
+source-coverage fields. Consumers should tolerate additive fields within a major
+report version; the input schema remains version 1.0.0. Scores are not a regulatory
+compliance percentage, and no aggregate plan score is supplied.
 
 Example plans are under `examples/w1/<RULE-ID>/compliant.json` and
 `violating.json`. Those historical names describe the intended scenarios; they

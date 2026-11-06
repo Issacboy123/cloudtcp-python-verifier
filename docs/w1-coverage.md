@@ -29,12 +29,15 @@ Runtime metadata is explicit Python data in `rules/w1_metadata.py`; tests compar
 all entries and citations with the extracted Markdown source. The source
 document is for reference and test verification, not a runtime dependency.
 
-Missing facts produce `not_evaluable`, `complete=False`, and `score=null`.
-Known violations plus unknown subjects produce incomplete `fail` results that
-retain the known findings. W1 partial failures leave the rule-level score null
-and keep scores attached to known findings. Scores are optional local grades for evaluated
-subjects, not a measurement of overall plan compliance. Always inspect status,
-completeness, findings, errors, and limitations together.
+In reports, missing facts produce `not_evaluable`, `complete=False`, and integer
+`score=0`. Known violations plus unknown subjects produce incomplete `fail`
+results that retain the known findings and also score `0`. Every reported `pass`
+scores `1`; every other status scores `0`, including `not_applicable` and `error`.
+Existing finding-level scores become integer `0` without changing measurements
+or adding absent score fields. Direct W1 evaluators still return their existing
+optional graded scores; the report projection changes neither evaluator logic
+nor validation. These scores are not a measurement of overall plan compliance.
+Always inspect status, completeness, findings, errors, and limitations together.
 
 The example filenames `compliant.json` and `violating.json` are historical
 scenario labels. A scenario remains unevaluable if schema 1.0.0 cannot express
@@ -51,7 +54,7 @@ counted as independent coverage. The full registry can apply California provisio
 using `site.state`, while this historical W1 registry retains its documented
 behavior. Do not interpret W1-only results as evaluation of California replacements.
 
-Report 1.2.0 separates `registered_rule_ids`, `automated_rule_ids`, and
+Report 2.0.0 retains separate `registered_rule_ids`, `automated_rule_ids`, and
 `source_coverage`. The legacy `implemented_rule_ids` field remains a registered-list
 alias. All 76 W1 IDs appearing there does not mean all 76 checks are automated.
 Input 1.0.0 is unchanged, so full source accounting still includes explicit

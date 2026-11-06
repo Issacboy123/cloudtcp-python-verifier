@@ -29,7 +29,7 @@ def test_full_default_accounts_for_both_sources(minimal):
     assert report.registered_rule_ids == report.implemented_rule_ids
     assert set(report.automated_rule_ids) < set(report.registered_rule_ids)
     assert "mutcd.T-013" in report.automated_rule_ids
-    assert report.version == "1.2.0" and not report.evaluation_complete
+    assert report.version == "2.0.0" and not report.evaluation_complete
     assert not report.errors
     assert report.to_dict() == verify_document(minimal, registry=ALL_REGISTRY).to_dict()
 

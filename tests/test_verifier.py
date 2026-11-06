@@ -45,7 +45,7 @@ def test_public_reexports_and_explicit_empty_registry(example):
     assert report.coverage_scope == "implemented_rules_only"
     assert "No rules" in report.limitations[1]
     assert report.exit_code == 0
-    assert report.to_dict()["version"] == "1.2.0"
+    assert report.to_dict()["version"] == "2.0.0"
 
 
 @pytest.mark.parametrize("status,complete,has_findings", tuple(product(

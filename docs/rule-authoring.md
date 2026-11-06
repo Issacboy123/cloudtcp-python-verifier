@@ -90,14 +90,21 @@ requires valid input, no execution errors, and complete results for every rule.
 The engine validates the matrix; the author must establish the factual meaning
 of pass, inapplicability, and missing facts in evaluator logic and tests.
 
-`RuleResult.score` is optional and must be a finite number in `[0, 1]`, excluding
+The internal evaluator's `RuleResult.score` is optional and must be a finite number in `[0, 1]`, excluding
 booleans. `not_applicable`, `not_evaluable`, and `error` results must leave it
 `None`. A partial `fail` may retain a score for evaluated subjects, but must also
 set `complete=False` and explain the missing subjects. Do not discard known
 findings when a later subject cannot be evaluated. An OPTION may receive a low
 score without producing findings; a score never replaces status or completeness.
-Report version 1.1.0 added this nullable field; 1.2.0 adds coverage reporting.
-Input schema version remains 1.0.0.
+These evaluator values are validated before report construction. Report version
+2.0.0 exposes separate `ReportRuleResult` objects with required integer scores:
+`pass` becomes `1`; every other status becomes `0`. Status, completeness, reasons,
+citations, and measurements remain intact. Existing finding `values.score` keys
+become integer `0` in reports; absent keys are not added. This projection never
+changes evaluator-owned values or allows malformed evaluator output to bypass
+validation. Do not derive report scores by changing the measurement helpers.
+Version 1.1.0 added nullable report scores and 1.2.0 added coverage reporting.
+Input schema version remains 1.0.0; no aggregate plan score is introduced.
 
 Use `STANDARD` with severity `error`, or `GUIDANCE` with severity `warning`.
 `OPTION` and `SUPPORT` may return no-finding results but cannot independently
@@ -151,7 +158,7 @@ rounding, approximate tolerances, device associations, or roadway classification
 The current input schema cannot express every documented requirement, and this
 work does not add fields or parse free text as compliance evidence.
 
-Report 1.2.0 exposes `registered_rule_ids`, `automated_rule_ids`, and
+Report 2.0.0 retains `registered_rule_ids`, `automated_rule_ids`, and
 `source_coverage`. Preserve `implemented_rule_ids` as the deprecated registered-list
 alias for existing consumers. Neither registration counts nor source-accounting
 counts are compliance percentages. Test exact source inventory and citations,

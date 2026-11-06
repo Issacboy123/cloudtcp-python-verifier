@@ -66,24 +66,26 @@ def test_supported_compliant_plan_passes_with_score_one(rule_id):
 
 
 @pytest.mark.parametrize("rule_id", SCORED_VIOLATING_IDS)
-def test_supported_violating_plan_scores_below_one(rule_id):
+def test_supported_violating_plan_scores_follow_status(rule_id):
     plan = load_plan(rule_id, "violating")
     result = result_for(rule_id, plan)
-    assert result.score is not None and 0 <= result.score < 1
+    assert type(result.score) is int
     if rule_id == "BUFFER-01":
-        # OPTION: short buffer grades down without findings.
+        # OPTION: a short buffer still passes and receives the passing score.
         assert result.status == "pass" and result.complete and not result.findings
+        assert result.score == 1
     else:
         assert result.status == "fail" and result.complete and result.findings
-        assert all(0 <= f.values["score"] <= 1 for f in result.findings)
+        assert result.score == 0
+        assert all(f.values["score"] == 0 for f in result.findings)
 
 
 @pytest.mark.parametrize("rule_id", [r for r in ALL_IDS if r not in EVALUATORS])
-def test_stub_plans_are_not_evaluable_with_null_score(rule_id):
+def test_stub_plans_are_not_evaluable_with_zero_score(rule_id):
     for kind in ("compliant", "violating"):
         result = result_for(rule_id, load_plan(rule_id, kind))
         assert result.status == "not_evaluable" and not result.complete
-        assert result.score is None and result.reason
+        assert result.score == 0 and result.reason
 
 
 @pytest.mark.parametrize("rule_id", INCOMPLETE_EXAMPLE_IDS)
@@ -91,7 +93,7 @@ def test_stub_plans_are_not_evaluable_with_null_score(rule_id):
 def test_examples_missing_required_facts_remain_incomplete(rule_id, kind):
     result = result_for(rule_id, load_plan(rule_id, kind))
     assert result.status == "not_evaluable" and not result.complete
-    assert result.score is None and not result.findings and result.reason
+    assert result.score == 0 and not result.findings and result.reason
 
 
 def test_file_plan_round_trip():

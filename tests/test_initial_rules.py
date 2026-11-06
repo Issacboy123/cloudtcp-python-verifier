@@ -164,7 +164,9 @@ def test_only_boundary_scale_meter_conversion_noise_is_absorbed(site):
     element = taper(0)
     element["end_station"] = math.nextafter(15.24, 0)
     site["elements"] = [element]
-    assert t013(site).status == "pass"
+    result = t013(site)
+    assert result.status == "pass" and result.score == 1
+    assert type(result.score) is int
     element["end_station"] = 15.24 - 1e-10
     assert t013(site).status == "fail"
 

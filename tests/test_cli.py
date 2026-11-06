@@ -263,12 +263,17 @@ verifier.deepcopy = copy_failure
             "exception": "rule_exception", "malformed": "malformed_result", "copy": "operational_error",
         }[failure]
         assert not report["evaluation_complete"]
+        assert all(type(r["score"]) is int and r["score"] == 0 for r in report["rule_results"])
+        assert report["findings"][0]["values"]["score"] == 0
+        taper = next(r for r in report["rule_results"] if r["rule_id"] == "mutcd.T-013")
+        assert taper["findings"] == report["findings"]
         if failure == "copy":
             assert "test.crash: Execution did not reach this check." in report["limitations"]
     else:
         assert "GUIDANCE/warning" in process.stdout
         assert "mutcd.Z-026:" in process.stdout.split("Incomplete checks:")[1]
         assert "test.crash" in process.stdout and "CA-005" in process.stdout
+        assert "Score: 0" in process.stdout and "Score: unscored" not in process.stdout
 
 
 @pytest.mark.parametrize("fault", ["schema", "load"])
@@ -341,6 +346,9 @@ verifier._text_report = broken
     report = json.loads(process.stdout)
     assert len(report["findings"]) == 1 and len(report["rule_results"]) == 5
     assert report["errors"][0]["code"] == "operational_error"
+    assert all(type(r["score"]) is int and r["score"] == 0 for r in report["rule_results"])
+    assert report["findings"][0]["values"]["score"] == 0
+    assert report["rule_results"][-1]["findings"] == report["findings"]
     assert "CA-005" in " ".join(report["limitations"])
 
 
